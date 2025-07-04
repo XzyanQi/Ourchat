@@ -1,0 +1,48 @@
+{
+  "project_info": {
+    "project_number": "821920648601",
+    "project_id": "ourchat-7531b",
+    "storage_bucket": "ourchat-7531b.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:821920648601:android:df2924f9964edf9b86d708",
+        "android_client_info": {
+          "package_name": "com.company.ourchat"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyB57WoTvO8Z83JTYMC1GafWezrimxyRHj8"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:821920648601:android:68e69c4df9624cd286d708",
+        "android_client_info": {
+          "package_name": "com.example.ourchat"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyB57WoTvO8Z83JTYMC1GafWezrimxyRHj8"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
