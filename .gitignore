@@ -47,7 +47,7 @@ app.*.map.json
 /android/app/release
 
 # Firebase & Supabase typical
-env
-env.*
+.env
+.env.*
 .firebase/
 .supabase/

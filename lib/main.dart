@@ -1,4 +1,5 @@
 import 'package:firebase_core/firebase_core.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:get_it/get_it.dart';
@@ -38,11 +39,20 @@ Future<void> main() async {
 
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
 
-  await dotenv.load();
-  await Supabase.initialize(
-    url: dotenv.env['SUPABASE_URL']!,
-    anonKey: dotenv.env['SUPABASE_ANON_KEY']!,
-  );
+  String supabaseUrl = "";
+  String supabaseAnonKey = "";
+
+  if (kIsWeb) {
+    supabaseUrl = 'https://gadcbmparcoqebtwqfth.supabase.co';
+    supabaseAnonKey =
+        'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdhZGNibXBhcmNvcWVidHdxZnRoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTAxMzc0MTgsImV4cCI6MjA2NTcxMzQxOH0.Xp0s7J_fj6aQz3XZSlqB6L_aP7sZrwapu4KNAvcyDjc';
+  } else {
+    await dotenv.load();
+    supabaseUrl = dotenv.env['SUPABASE_URL']!;
+    supabaseAnonKey = dotenv.env['SUPABASE_ANON_KEY']!;
+  }
+
+  await Supabase.initialize(url: supabaseUrl, anonKey: supabaseAnonKey);
 
   setupServices();
 
