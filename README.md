@@ -8,6 +8,7 @@ OurChat adalah aplikasi chat modern yang dibangun menggunakan Flutter. Aplikasi 
 - Pesan Teks Real-time – Kirim dan terima pesan teks secara real-time. Percakapan terupdate seketika menggunakan Cloud Firestore sehingga pengguna dapat berbincang tanpa hambatan.
 - Berbagi Gambar – Unggah dan kirim gambar/foto di dalam chat. Gambar akan diunggah ke Supabase storage, dan tautan gambarnya dibagikan di chat sehingga pengguna lain dapat melihatnya langsung di percakapan.
 - Daftar Pengguna & Pencarian – Temukan pengguna lain yang terdaftar untuk memulai chat baru. OurChat menyediakan halaman daftar pengguna lengkap dengan fungsi pencarian, sehingga Anda dapat mencari teman dengan mudah dan memulai obrolan.
+- Voice Note - Kirim Pesan suara dan mendengarkan
 - Status Online – Lihat status online atau kapan terakhir kali pengguna aktif (last seen). Hal ini memudahkan Anda mengetahui ketersediaan teman chat sebelum mengirim pesan.
 Antarmuka Modern – Desain UI yang bersih dan modern menggunakan Flutter, memberikan pengalaman pengguna yang ramah di perangkat mobile maupun web.
 - Enkripsi end-to-end
@@ -22,7 +23,7 @@ OurChat dibangun sepenuhnya dengan teknologi cross-platform sehingga dapat dijal
 
 ## Roadmap
 Ke depannya, beberapa fitur baru direncanakan untuk meningkatkan OurChat:
-- Voice Note (Pesan Suara) – Menambahkan kemampuan merekam audio dan mengirimnya sebagai pesan suara di dalam chat.
+- Voice Note (Pesan Suara) – Menambahkan kemampuan merekam audio dan mengirimnya sebagai pesan suara di dalam chat < Sudah Clear.
 - Peningkatan Lain – Perbaikan antarmuka pengguna, optimalisasi performa, dan dukungan fitur-fitur tambahan berdasarkan masukan (misalnya notifikasi push untuk pesan baru, indikator "sedang mengetik", dll).
 
 ## Kontribusi
