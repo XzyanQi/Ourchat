@@ -50,6 +50,12 @@ class ChatsPageProvider extends ChangeNotifier {
               messages.add(message);
             }
 
+            ChatMessage? pinnedMessage;
+            try {
+              final pinned = await db.getPinnedMessage(d.id);
+              pinnedMessage = pinned;
+            } catch (_) {}
+
             return Chat(
               uid: d.id,
               currentUserUid: auth.user!.uid,
@@ -57,6 +63,7 @@ class ChatsPageProvider extends ChangeNotifier {
               messages: messages,
               activity: chatData["is_activity"] ?? false,
               group: chatData["is_group"] ?? false,
+              pinnedMessage: pinnedMessage,
             );
           }).toList(),
         );
@@ -65,6 +72,30 @@ class ChatsPageProvider extends ChangeNotifier {
       });
     } catch (e) {
       debugPrint("Gagal mengambil chat: $e");
+    }
+  }
+
+  Future<void> unpinChat(String chatId) async {
+    try {
+      await db.clearPinnedMessage(chatId);
+      getChats(); // refresh
+    } catch (e) {
+      debugPrint("Gagal unpin chat: $e");
+    }
+  }
+
+  Future<void> refreshPinnedChat(String chatId) async {
+    try {
+      if (chats != null) {
+        final idx = chats!.indexWhere((c) => c.uid == chatId);
+        if (idx >= 0) {
+          final pinned = await db.getPinnedMessage(chatId);
+          chats![idx] = chats![idx].copyWith(pinnedMessage: pinned);
+          notifyListeners();
+        }
+      }
+    } catch (e) {
+      debugPrint("Gagal refresh pinned chat: $e");
     }
   }
 }

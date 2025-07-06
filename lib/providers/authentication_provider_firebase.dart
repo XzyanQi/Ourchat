@@ -1,3 +1,4 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:get_it/get_it.dart';
@@ -25,25 +26,45 @@ class AuthenticationProviderFirebase extends ChangeNotifier {
     _auth.authStateChanges().listen((firebaseUser) async {
       if (firebaseUser != null) {
         try {
+          await _ensureUserDocumentExists(firebaseUser);
+
           await _databaseService.updateUserLastSeenTime(firebaseUser.uid);
+
           final snapshot = await _databaseService.getUser(firebaseUser.uid);
           if (snapshot.exists) {
-            final userData = snapshot.data() as Map<String, dynamic>;
-            user = ChatUser.fromJson({
-              "uid": firebaseUser.uid,
-              "name": userData["name"],
-              "email": userData["email"],
-              "imageUrl": userData["imageUrl"],
-              "lastActive": userData["lastActive"],
-            });
+            final userData = snapshot.data() as Map<String, dynamic>?;
+            if (userData != null) {
+              user = ChatUser.fromJson({
+                "uid": firebaseUser.uid,
+                "name": _safeGetString(
+                  userData,
+                  "name",
+                  firebaseUser.displayName ?? "Unknown",
+                ),
+                "email": _safeGetString(
+                  userData,
+                  "email",
+                  firebaseUser.email ?? "",
+                ),
+                "imageUrl": _safeGetString(userData, "imageUrl", ""),
+                "lastActive": _safeGetTimestamp(userData, "lastActive"),
+              });
 
-            _clearError();
-            notifyListeners();
-            _navigationService.removeAndNavigateToRoute("/home");
+              _clearError();
+              notifyListeners();
+              _navigationService.removeAndNavigateToRoute("/home");
+            } else {
+              throw Exception("User data is null");
+            }
+          } else {
+            // Jika dokumen tidak ada, buat dokumen baru
+            await _createUserDocument(firebaseUser);
           }
         } catch (e) {
           debugPrint("Gagal memuat data user: $e");
-          _setError("Gagal memuat data user");
+          _setError("Gagal memuat data user: ${e.toString()}");
+
+          await _auth.signOut();
         }
       } else {
         user = null;
@@ -54,6 +75,71 @@ class AuthenticationProviderFirebase extends ChangeNotifier {
     });
   }
 
+  Future<void> _ensureUserDocumentExists(User firebaseUser) async {
+    try {
+      final snapshot = await _databaseService.getUser(firebaseUser.uid);
+      if (!snapshot.exists) {
+        await _createUserDocument(firebaseUser);
+      }
+    } catch (e) {
+      debugPrint("Error checking user document: $e");
+    }
+  }
+
+  Future<void> _createUserDocument(User firebaseUser) async {
+    try {
+      await _databaseService.createUser(
+        firebaseUser.uid,
+        firebaseUser.displayName ?? "Unknown User",
+        firebaseUser.email ?? "",
+        firebaseUser.photoURL ?? "",
+      );
+      debugPrint("User document created successfully");
+    } catch (e) {
+      debugPrint("Error creating user document: $e");
+      throw Exception("Failed to create user document");
+    }
+  }
+
+  String _safeGetString(
+    Map<String, dynamic> data,
+    String key,
+    String fallback,
+  ) {
+    try {
+      return data[key]?.toString() ?? fallback;
+    } catch (e) {
+      debugPrint("Error getting string for key $key: $e");
+      return fallback;
+    }
+  }
+
+  String _safeGetTimestamp(Map<String, dynamic> data, String key) {
+    try {
+      final value = data[key];
+      if (value == null) {
+        return DateTime.now().toIso8601String();
+      }
+
+      if (value is String) {
+        DateTime.parse(value);
+        return value;
+      }
+
+      if (value is Timestamp) {
+        return value.toDate().toIso8601String();
+      }
+
+      if (value is int) {
+        return DateTime.fromMillisecondsSinceEpoch(value).toIso8601String();
+      }
+      return DateTime.now().toIso8601String();
+    } catch (e) {
+      debugPrint("Error parsing timestamp for key $key: $e");
+      return DateTime.now().toIso8601String();
+    }
+  }
+
   Future<void> loginMenggunakanEmailPassword(
     String email,
     String password,
@@ -61,6 +147,10 @@ class AuthenticationProviderFirebase extends ChangeNotifier {
     try {
       _setLoading(true);
       _clearError();
+
+      if (email.isEmpty || password.isEmpty) {
+        throw Exception("Email dan password tidak boleh kosong");
+      }
 
       await _auth.signInWithEmailAndPassword(email: email, password: password);
     } on FirebaseAuthException catch (e) {
@@ -81,15 +171,17 @@ class AuthenticationProviderFirebase extends ChangeNotifier {
         case 'too-many-requests':
           errorMsg = 'Terlalu banyak percobaan, coba lagi nanti.';
           break;
+        case 'network-request-failed':
+          errorMsg = 'Periksa koneksi internet Anda.';
+          break;
         default:
           errorMsg = e.message ?? 'Login gagal';
       }
-
       debugPrint("Firebase Auth error: ${e.code} - ${e.message}");
       _setError(errorMsg);
     } catch (e) {
       debugPrint("Error login tidak diketahui: $e");
-      _setError("Terjadi kesalahan tak terduga");
+      _setError("Terjadi kesalahan tak terduga: ${e.toString()}");
     } finally {
       _setLoading(false);
     }
@@ -104,23 +196,36 @@ class AuthenticationProviderFirebase extends ChangeNotifier {
       _setLoading(true);
       _clearError();
 
+      if (email.isEmpty || password.isEmpty || name.isEmpty) {
+        throw Exception("Semua field harus diisi");
+      }
+
       final credential = await _auth.createUserWithEmailAndPassword(
         email: email,
         password: password,
       );
+
       await credential.user?.updateDisplayName(name);
+
+      if (credential.user != null) {
+        await _createUserDocument(credential.user!);
+      }
+
       return credential.user?.uid;
     } on FirebaseAuthException catch (e) {
       String errorMsg;
       switch (e.code) {
         case 'weak-password':
-          errorMsg = 'Password terlalu lemah.';
+          errorMsg = 'Password terlalu lemah (minimal 6 karakter).';
           break;
         case 'email-already-in-use':
           errorMsg = 'Akun sudah ada dengan email tersebut.';
           break;
         case 'invalid-email':
           errorMsg = 'Email tidak valid.';
+          break;
+        case 'network-request-failed':
+          errorMsg = 'Periksa koneksi internet Anda.';
           break;
         default:
           errorMsg = e.message ?? 'Registrasi gagal';
@@ -131,7 +236,7 @@ class AuthenticationProviderFirebase extends ChangeNotifier {
       return null;
     } catch (e) {
       debugPrint("Error registrasi tidak diketahui: $e");
-      _setError("Terjadi kesalahan tak terduga");
+      _setError("Terjadi kesalahan tak terduga: ${e.toString()}");
       return null;
     } finally {
       _setLoading(false);
@@ -142,6 +247,10 @@ class AuthenticationProviderFirebase extends ChangeNotifier {
     try {
       _setLoading(true);
       _clearError();
+
+      if (email.isEmpty) {
+        throw Exception("Email tidak boleh kosong");
+      }
 
       await _auth.sendPasswordResetEmail(email: email);
       return true;
@@ -154,6 +263,9 @@ class AuthenticationProviderFirebase extends ChangeNotifier {
         case 'invalid-email':
           errorMsg = 'Email tidak valid.';
           break;
+        case 'network-request-failed':
+          errorMsg = 'Periksa koneksi internet Anda.';
+          break;
         default:
           errorMsg = e.message ?? 'Gagal mengirim email reset';
       }
@@ -163,7 +275,7 @@ class AuthenticationProviderFirebase extends ChangeNotifier {
       return false;
     } catch (e) {
       debugPrint("Error reset password tidak diketahui: $e");
-      _setError("Terjadi kesalahan tak terduga");
+      _setError("Terjadi kesalahan tak terduga: ${e.toString()}");
       return false;
     } finally {
       _setLoading(false);
@@ -173,12 +285,17 @@ class AuthenticationProviderFirebase extends ChangeNotifier {
   Future<void> logout() async {
     try {
       _setLoading(true);
+
+      if (user != null) {
+        await _databaseService.updateUserLastSeenTime(user!.uid);
+      }
+
       await _auth.signOut();
       user = null;
       _clearError();
     } catch (e) {
       debugPrint("Logout error: $e");
-      _setError("Gagal logout");
+      _setError("Gagal logout: ${e.toString()}");
     } finally {
       _setLoading(false);
     }
@@ -201,5 +318,48 @@ class AuthenticationProviderFirebase extends ChangeNotifier {
 
   void clearError() {
     _clearError();
+  }
+
+  Future<void> retryLoadUser() async {
+    final currentUser = _auth.currentUser;
+    if (currentUser != null) {
+      try {
+        _setLoading(true);
+        _clearError();
+
+        await _ensureUserDocumentExists(currentUser);
+        await _databaseService.updateUserLastSeenTime(currentUser.uid);
+
+        final snapshot = await _databaseService.getUser(currentUser.uid);
+        if (snapshot.exists) {
+          final userData = snapshot.data() as Map<String, dynamic>?;
+          if (userData != null) {
+            user = ChatUser.fromJson({
+              "uid": currentUser.uid,
+              "name": _safeGetString(
+                userData,
+                "name",
+                currentUser.displayName ?? "Unknown",
+              ),
+              "email": _safeGetString(
+                userData,
+                "email",
+                currentUser.email ?? "",
+              ),
+              "imageUrl": _safeGetString(userData, "imageUrl", ""),
+              "lastActive": _safeGetTimestamp(userData, "lastActive"),
+            });
+
+            notifyListeners();
+            _navigationService.removeAndNavigateToRoute("/home");
+          }
+        }
+      } catch (e) {
+        debugPrint("Error retry load user: $e");
+        _setError("Gagal memuat ulang data user");
+      } finally {
+        _setLoading(false);
+      }
+    }
   }
 }

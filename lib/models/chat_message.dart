@@ -1,6 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
-enum MessageType { TEXT, IMAGE, UNKNOWN }
+enum MessageType { TEXT, IMAGE, VOICE, UNKNOWN }
 
 class ChatMessage {
   final String senderID;
@@ -24,6 +24,9 @@ class ChatMessage {
       case "IMAGE":
         messageType = MessageType.IMAGE;
         break;
+      case "VOICE":
+        messageType = MessageType.VOICE;
+        break;
       default:
         messageType = MessageType.UNKNOWN;
     }
@@ -46,6 +49,9 @@ class ChatMessage {
         break;
       case MessageType.IMAGE:
         messageType = "IMAGE";
+        break;
+      case MessageType.VOICE:
+        messageType = "VOICE";
         break;
       default:
         messageType = "UNKNOWN";

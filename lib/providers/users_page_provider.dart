@@ -15,9 +15,13 @@ class UsersPageProvider extends ChangeNotifier {
 
   List<ChatUser> _users = [];
   List<ChatUser> _selectedUsers = [];
+  bool _isLoading = false;
+  String? _error;
 
   List<ChatUser> get users => _users;
   List<ChatUser> get selectedUsers => _selectedUsers;
+  bool get isLoading => _isLoading;
+  String? get error => _error;
 
   UsersPageProvider(this._auth) {
     _database = GetIt.instance.get<DatabaseService>();
@@ -31,7 +35,8 @@ class UsersPageProvider extends ChangeNotifier {
     super.dispose();
   }
 
-  void getUsers({String? name}) async {
+  Future<void> getUsers({String? name}) async {
+    _setLoading(true);
     _selectedUsers = [];
     try {
       final snapshot = await _database.getUsers(name: name);
@@ -40,11 +45,15 @@ class UsersPageProvider extends ChangeNotifier {
         data["uid"] = doc.id;
         return ChatUser.fromJson(data);
       }).toList();
-      notifyListeners();
+      _error = null;
     } catch (e) {
-      debugPrint("Tidak ada user ditemukan");
+      _users = [];
+      _error = "Tidak ada user ditemukan";
+      debugPrint(_error!);
       debugPrint(e.toString());
     }
+    _setLoading(false);
+    notifyListeners();
   }
 
   void updateSelectedUsers(ChatUser user) {
@@ -56,7 +65,10 @@ class UsersPageProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  void createChat() async {
+  Future<void> createChat() async {
+    if (_selectedUsers.isEmpty) return;
+    _setLoading(true);
+
     try {
       List<String> membersId = _selectedUsers.map((user) => user.uid).toList();
       membersId.add(_auth.user!.uid);
@@ -86,12 +98,24 @@ class UsersPageProvider extends ChangeNotifier {
           group: isGroup,
         ),
       );
-      _selectedUsers = [];
-      notifyListeners();
+      clearSelection();
       _navigation.navigateToPage(chatPage);
     } catch (e) {
-      debugPrint("Gagal membuat chat");
+      _error = "Gagal membuat chat";
+      debugPrint(_error!);
       debugPrint(e.toString());
     }
+    _setLoading(false);
+    notifyListeners();
+  }
+
+  void clearSelection() {
+    _selectedUsers = [];
+    notifyListeners();
+  }
+
+  void _setLoading(bool val) {
+    _isLoading = val;
+    notifyListeners();
   }
 }

@@ -71,6 +71,7 @@ class _UsersPageState extends State<UsersPage> with TickerProviderStateMixin {
     _searchController.dispose();
     _listController.dispose();
     _fabController.dispose();
+    _searchFieldTextEditingController.dispose();
     super.dispose();
   }
 
@@ -82,11 +83,10 @@ class _UsersPageState extends State<UsersPage> with TickerProviderStateMixin {
 
     return ChangeNotifierProvider<UsersPageProvider>(
       create: (_) => UsersPageProvider(_auth),
-      child: Builder(
-        builder: (BuildContext context) {
-          _pageProvider = context.watch<UsersPageProvider>();
+      child: Consumer<UsersPageProvider>(
+        builder: (context, pageProvider, _) {
+          _pageProvider = pageProvider;
 
-          // Animasi FAB saat user dipilih
           WidgetsBinding.instance.addPostFrameCallback((_) {
             if (_pageProvider.selectedUsers.isNotEmpty &&
                 !_fabController.isCompleted) {
@@ -284,7 +284,7 @@ class _UsersPageState extends State<UsersPage> with TickerProviderStateMixin {
                       ),
                     ),
                     onSubmitted: (value) {
-                      _pageProvider.getUsers(name: value);
+                      _pageProvider.getUsers(name: value.trim());
                       FocusScope.of(context).unfocus();
                     },
                   ),
@@ -301,6 +301,20 @@ class _UsersPageState extends State<UsersPage> with TickerProviderStateMixin {
     return AnimatedBuilder(
       animation: _listFadeAnimation,
       builder: (context, child) {
+        // Tampilkan loading
+        if (_pageProvider.isLoading) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        // Tampilkan error
+        if (_pageProvider.error != null) {
+          return Center(
+            child: Text(
+              _pageProvider.error!,
+              style: const TextStyle(color: Colors.redAccent, fontSize: 16),
+            ),
+          );
+        }
+        // Tampilkan list user
         return FadeTransition(
           opacity: _listFadeAnimation,
           child: _userListContent(),
@@ -310,7 +324,9 @@ class _UsersPageState extends State<UsersPage> with TickerProviderStateMixin {
   }
 
   Widget _userListContent() {
-    List<ChatUser> users = _pageProvider.users;
+    List<ChatUser> users = _pageProvider.users
+        .where((u) => u.uid != _auth.user?.uid)
+        .toList();
 
     if (users.isNotEmpty) {
       return Container(
@@ -319,218 +335,7 @@ class _UsersPageState extends State<UsersPage> with TickerProviderStateMixin {
           physics: const BouncingScrollPhysics(),
           itemCount: users.length,
           itemBuilder: (BuildContext context, int index) {
-            return AnimatedContainer(
-              duration: Duration(milliseconds: 300 + (index * 50)),
-              curve: Curves.easeOutBack,
-              child: TweenAnimationBuilder(
-                duration: Duration(milliseconds: 600 + (index * 100)),
-                tween: Tween<double>(begin: 0, end: 1),
-                builder: (context, double value, child) {
-                  return Transform.translate(
-                    offset: Offset(50 * (1 - value), 0),
-                    child: Opacity(
-                      opacity: value,
-                      child: Container(
-                        margin: const EdgeInsets.only(bottom: 12),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF1A1A26).withOpacity(0.6),
-                          borderRadius: BorderRadius.circular(16),
-                          border: Border.all(
-                            color:
-                                _pageProvider.selectedUsers.contains(
-                                  users[index],
-                                )
-                                ? const Color(0xFF6C5CE7).withOpacity(0.5)
-                                : Colors.white.withOpacity(0.1),
-                            width: 1.5,
-                          ),
-                          boxShadow:
-                              _pageProvider.selectedUsers.contains(users[index])
-                              ? [
-                                  BoxShadow(
-                                    color: const Color(
-                                      0xFF6C5CE7,
-                                    ).withOpacity(0.2),
-                                    blurRadius: 12,
-                                    offset: const Offset(0, 4),
-                                  ),
-                                ]
-                              : [],
-                        ),
-                        child: Material(
-                          color: Colors.transparent,
-                          child: InkWell(
-                            borderRadius: BorderRadius.circular(16),
-                            onTap: () {
-                              _pageProvider.updateSelectedUsers(users[index]);
-                            },
-                            child: Padding(
-                              padding: const EdgeInsets.all(16),
-                              child: Row(
-                                children: [
-                                  Stack(
-                                    children: [
-                                      Container(
-                                        width: 56,
-                                        height: 56,
-                                        decoration: BoxDecoration(
-                                          borderRadius: BorderRadius.circular(
-                                            28,
-                                          ),
-                                          gradient: LinearGradient(
-                                            colors: [
-                                              const Color(0xFF6C5CE7),
-                                              const Color(0xFF5B4FE0),
-                                            ],
-                                          ),
-                                          boxShadow: [
-                                            BoxShadow(
-                                              color: const Color(
-                                                0xFF6C5CE7,
-                                              ).withOpacity(0.3),
-                                              blurRadius: 8,
-                                              offset: const Offset(0, 2),
-                                            ),
-                                          ],
-                                        ),
-                                        child: ClipRRect(
-                                          borderRadius: BorderRadius.circular(
-                                            28,
-                                          ),
-                                          child:
-                                              users[index].imageUrl.isNotEmpty
-                                              ? Image.network(
-                                                  users[index].imageUrl,
-                                                  fit: BoxFit.cover,
-                                                  errorBuilder:
-                                                      (
-                                                        context,
-                                                        error,
-                                                        stackTrace,
-                                                      ) {
-                                                        return Center(
-                                                          child: Text(
-                                                            users[index].name
-                                                                .substring(0, 1)
-                                                                .toUpperCase(),
-                                                            style:
-                                                                const TextStyle(
-                                                                  color: Colors
-                                                                      .white,
-                                                                  fontSize: 20,
-                                                                  fontWeight:
-                                                                      FontWeight
-                                                                          .bold,
-                                                                ),
-                                                          ),
-                                                        );
-                                                      },
-                                                )
-                                              : Center(
-                                                  child: Text(
-                                                    users[index].name
-                                                        .substring(0, 1)
-                                                        .toUpperCase(),
-                                                    style: const TextStyle(
-                                                      color: Colors.white,
-                                                      fontSize: 20,
-                                                      fontWeight:
-                                                          FontWeight.bold,
-                                                    ),
-                                                  ),
-                                                ),
-                                        ),
-                                      ),
-                                      if (users[index].wasRecentlyActive())
-                                        Positioned(
-                                          bottom: 2,
-                                          right: 2,
-                                          child: Container(
-                                            width: 16,
-                                            height: 16,
-                                            decoration: BoxDecoration(
-                                              color: Colors.green,
-                                              borderRadius:
-                                                  BorderRadius.circular(8),
-                                              border: Border.all(
-                                                color: const Color(0xFF1A1A26),
-                                                width: 2,
-                                              ),
-                                            ),
-                                          ),
-                                        ),
-                                    ],
-                                  ),
-                                  const SizedBox(width: 16),
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        Text(
-                                          users[index].name,
-                                          style: const TextStyle(
-                                            color: Colors.white,
-                                            fontSize: 16,
-                                            fontWeight: FontWeight.w600,
-                                          ),
-                                        ),
-                                        const SizedBox(height: 4),
-                                        Text(
-                                          "Aktif terakhir: ${users[index].lastActive}",
-                                          style: TextStyle(
-                                            color: Colors.white.withOpacity(
-                                              0.6,
-                                            ),
-                                            fontSize: 14,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                  AnimatedContainer(
-                                    duration: const Duration(milliseconds: 200),
-                                    width: 24,
-                                    height: 24,
-                                    decoration: BoxDecoration(
-                                      color:
-                                          _pageProvider.selectedUsers.contains(
-                                            users[index],
-                                          )
-                                          ? const Color(0xFF6C5CE7)
-                                          : Colors.transparent,
-                                      borderRadius: BorderRadius.circular(12),
-                                      border: Border.all(
-                                        color:
-                                            _pageProvider.selectedUsers
-                                                .contains(users[index])
-                                            ? const Color(0xFF6C5CE7)
-                                            : Colors.white.withOpacity(0.3),
-                                        width: 2,
-                                      ),
-                                    ),
-                                    child:
-                                        _pageProvider.selectedUsers.contains(
-                                          users[index],
-                                        )
-                                        ? const Icon(
-                                            Icons.check,
-                                            color: Colors.white,
-                                            size: 16,
-                                          )
-                                        : null,
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  );
-                },
-              ),
-            );
+            return _buildUserItem(users[index], index);
           },
         ),
       );
@@ -572,6 +377,191 @@ class _UsersPageState extends State<UsersPage> with TickerProviderStateMixin {
         ),
       );
     }
+  }
+
+  Widget _buildUserItem(ChatUser user, int index) {
+    return AnimatedContainer(
+      duration: Duration(milliseconds: 300 + (index * 50)),
+      curve: Curves.easeOutBack,
+      child: TweenAnimationBuilder(
+        duration: Duration(milliseconds: 600 + (index * 100)),
+        tween: Tween<double>(begin: 0, end: 1),
+        builder: (context, double value, child) {
+          return Transform.translate(
+            offset: Offset(50 * (1 - value), 0),
+            child: Opacity(
+              opacity: value,
+              child: Container(
+                margin: const EdgeInsets.only(bottom: 12),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF1A1A26).withOpacity(0.6),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(
+                    color: _pageProvider.selectedUsers.contains(user)
+                        ? const Color(0xFF6C5CE7).withOpacity(0.5)
+                        : Colors.white.withOpacity(0.1),
+                    width: 1.5,
+                  ),
+                  boxShadow: _pageProvider.selectedUsers.contains(user)
+                      ? [
+                          BoxShadow(
+                            color: const Color(0xFF6C5CE7).withOpacity(0.2),
+                            blurRadius: 12,
+                            offset: const Offset(0, 4),
+                          ),
+                        ]
+                      : [],
+                ),
+                child: Material(
+                  color: Colors.transparent,
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(16),
+                    onTap: () {
+                      _pageProvider.updateSelectedUsers(user);
+                    },
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Row(
+                        children: [
+                          Stack(
+                            children: [
+                              Container(
+                                width: 56,
+                                height: 56,
+                                decoration: BoxDecoration(
+                                  borderRadius: BorderRadius.circular(28),
+                                  gradient: LinearGradient(
+                                    colors: [
+                                      const Color(0xFF6C5CE7),
+                                      const Color(0xFF5B4FE0),
+                                    ],
+                                  ),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: const Color(
+                                        0xFF6C5CE7,
+                                      ).withOpacity(0.3),
+                                      blurRadius: 8,
+                                      offset: const Offset(0, 2),
+                                    ),
+                                  ],
+                                ),
+                                child: ClipRRect(
+                                  borderRadius: BorderRadius.circular(28),
+                                  child: user.imageUrl.isNotEmpty
+                                      ? Image.network(
+                                          user.imageUrl,
+                                          fit: BoxFit.cover,
+                                          errorBuilder:
+                                              (context, error, stackTrace) {
+                                                return Center(
+                                                  child: Text(
+                                                    user.name
+                                                        .substring(0, 1)
+                                                        .toUpperCase(),
+                                                    style: const TextStyle(
+                                                      color: Colors.white,
+                                                      fontSize: 20,
+                                                      fontWeight:
+                                                          FontWeight.bold,
+                                                    ),
+                                                  ),
+                                                );
+                                              },
+                                        )
+                                      : Center(
+                                          child: Text(
+                                            user.name
+                                                .substring(0, 1)
+                                                .toUpperCase(),
+                                            style: const TextStyle(
+                                              color: Colors.white,
+                                              fontSize: 20,
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                          ),
+                                        ),
+                                ),
+                              ),
+                              if (user.wasRecentlyActive())
+                                Positioned(
+                                  bottom: 2,
+                                  right: 2,
+                                  child: Container(
+                                    width: 16,
+                                    height: 16,
+                                    decoration: BoxDecoration(
+                                      color: Colors.green,
+                                      borderRadius: BorderRadius.circular(8),
+                                      border: Border.all(
+                                        color: const Color(0xFF1A1A26),
+                                        width: 2,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                            ],
+                          ),
+                          const SizedBox(width: 16),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  user.name,
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  "Aktif terakhir: ${user.lastActive}",
+                                  style: TextStyle(
+                                    color: Colors.white.withOpacity(0.6),
+                                    fontSize: 14,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          AnimatedContainer(
+                            duration: const Duration(milliseconds: 200),
+                            width: 24,
+                            height: 24,
+                            decoration: BoxDecoration(
+                              color: _pageProvider.selectedUsers.contains(user)
+                                  ? const Color(0xFF6C5CE7)
+                                  : Colors.transparent,
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(
+                                color:
+                                    _pageProvider.selectedUsers.contains(user)
+                                    ? const Color(0xFF6C5CE7)
+                                    : Colors.white.withOpacity(0.3),
+                                width: 2,
+                              ),
+                            ),
+                            child: _pageProvider.selectedUsers.contains(user)
+                                ? const Icon(
+                                    Icons.check,
+                                    color: Colors.white,
+                                    size: 16,
+                                  )
+                                : null,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
   }
 
   Widget _buildCreateChatButton() {

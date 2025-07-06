@@ -1,15 +1,18 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
+import 'package:flutter_sound/flutter_sound.dart';
 import 'package:ourchat/models/chat.dart';
 import 'package:ourchat/models/chat_message.dart';
 import 'package:ourchat/models/chat_user.dart';
 import 'package:ourchat/providers/authentication_provider_firebase.dart';
 import 'package:ourchat/providers/chat_page_provider.dart';
 import 'package:ourchat/widgets/custom_list_view_tiles.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
 
 class ChatPage extends StatefulWidget {
   final Chat chat;
-
   const ChatPage({Key? key, required this.chat}) : super(key: key);
 
   @override
@@ -17,170 +20,216 @@ class ChatPage extends StatefulWidget {
 }
 
 class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
-  late double _deviceHeight;
-  late double _deviceWidth;
-  late AuthenticationProviderFirebase _auth;
-  late ChatPageProvider _pageProvider;
-  late GlobalKey<FormState> _messageFormState;
-  late ScrollController _messagesListViewController;
-  late AnimationController _sendButtonController;
-  late AnimationController _imageUploadController;
-  late Animation<double> _sendButtonAnimation;
-  late Animation<double> _imageUploadAnimation;
+  late double deviceHeight;
+  late double deviceWidth;
+  late AuthenticationProviderFirebase auth;
+  late GlobalKey<FormState> messageFormKey;
+  late ScrollController messagesController;
+  late AnimationController sendButtonCtrl;
+  late AnimationController imageUploadCtrl;
+  late Animation<double> sendButtonAnim;
+  late Animation<double> imageUploadAnim;
 
-  bool _isImageUploading = false;
-  bool _isMessageSending = false;
+  bool isImageUploading = false;
+  bool isMessageSending = false;
+  bool isRecording = false;
+  bool isUploadingVoice = false;
+  String? recordedVoicePath;
+
+  FlutterSoundRecorder? recorder;
 
   @override
   void initState() {
     super.initState();
-    _messageFormState = GlobalKey<FormState>();
-    _messagesListViewController = ScrollController();
-
-    _sendButtonController = AnimationController(
+    messageFormKey = GlobalKey<FormState>();
+    messagesController = ScrollController();
+    sendButtonCtrl = AnimationController(
       duration: const Duration(milliseconds: 200),
       vsync: this,
     );
-    _imageUploadController = AnimationController(
+    imageUploadCtrl = AnimationController(
       duration: const Duration(milliseconds: 300),
       vsync: this,
     );
+    sendButtonAnim = Tween<double>(
+      begin: 1.0,
+      end: 0.8,
+    ).animate(CurvedAnimation(parent: sendButtonCtrl, curve: Curves.easeInOut));
+    imageUploadAnim = Tween<double>(begin: 0.0, end: 1.0).animate(
+      CurvedAnimation(parent: imageUploadCtrl, curve: Curves.easeInOut),
+    );
+    recorder = FlutterSoundRecorder();
+    _initRecorder();
+  }
 
-    _sendButtonAnimation = Tween<double>(begin: 1.0, end: 0.8).animate(
-      CurvedAnimation(parent: _sendButtonController, curve: Curves.easeInOut),
-    );
-    _imageUploadAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
-      CurvedAnimation(parent: _imageUploadController, curve: Curves.easeInOut),
-    );
+  Future<void> _initRecorder() async {
+    await recorder!.openRecorder();
   }
 
   @override
   void dispose() {
-    _sendButtonController.dispose();
-    _imageUploadController.dispose();
+    sendButtonCtrl.dispose();
+    imageUploadCtrl.dispose();
+    messagesController.dispose();
+    recorder?.closeRecorder();
     super.dispose();
   }
 
-  Future<void> _handleImageUpload() async {
+  Future<void> handleImageUpload(BuildContext context) async {
+    setState(() => isImageUploading = true);
+    imageUploadCtrl.forward();
+    await Future.delayed(const Duration(milliseconds: 1200));
+    await Provider.of<ChatPageProvider>(
+      context,
+      listen: false,
+    ).sendImageMessage();
+    imageUploadCtrl.reverse();
+    setState(() => isImageUploading = false);
+  }
+
+  Future<void> handleTextMessage(BuildContext context) async {
+    final form = messageFormKey.currentState;
+    if (form != null && form.validate()) {
+      setState(() => isMessageSending = true);
+      sendButtonCtrl.forward().then((_) => sendButtonCtrl.reverse());
+      form.save();
+      await Future.delayed(const Duration(milliseconds: 250));
+      Provider.of<ChatPageProvider>(context, listen: false).sendTextMessage();
+      form.reset();
+      setState(() => isMessageSending = false);
+    }
+  }
+
+  // Voice Note Logic
+  Future<void> startRecording() async {
+    final tempDir = await getTemporaryDirectory();
+    final path =
+        '${tempDir.path}/voice_note_${DateTime.now().millisecondsSinceEpoch}.aac';
+    await recorder!.startRecorder(toFile: path, codec: Codec.aacADTS);
     setState(() {
-      _isImageUploading = true;
-    });
-    _imageUploadController.forward();
-
-    await Future.delayed(const Duration(milliseconds: 1500));
-
-    _pageProvider.sendImageMessage();
-
-    _imageUploadController.reverse();
-    setState(() {
-      _isImageUploading = false;
+      isRecording = true;
+      recordedVoicePath = path;
     });
   }
 
-  Future<void> _handleTextMessage() async {
-    if (_messageFormState.currentState != null &&
-        _messageFormState.currentState!.validate()) {
+  Future<void> stopRecording(BuildContext context) async {
+    await recorder!.stopRecorder();
+    setState(() => isRecording = false);
+    if (recordedVoicePath != null) {
+      setState(() => isUploadingVoice = true);
+      await Provider.of<ChatPageProvider>(
+        context,
+        listen: false,
+      ).sendVoiceMessage(File(recordedVoicePath!));
       setState(() {
-        _isMessageSending = true;
-      });
-
-      _sendButtonController.forward().then((_) {
-        _sendButtonController.reverse();
-      });
-
-      _messageFormState.currentState!.save();
-
-      await Future.delayed(const Duration(milliseconds: 300));
-
-      _pageProvider.sendTextMessage();
-      _messageFormState.currentState!.reset();
-
-      setState(() {
-        _isMessageSending = false;
+        recordedVoicePath = null;
+        isUploadingVoice = false;
       });
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    _deviceHeight = MediaQuery.of(context).size.height;
-    _deviceWidth = MediaQuery.of(context).size.width;
-    _auth = Provider.of<AuthenticationProviderFirebase>(context);
+    deviceHeight = MediaQuery.of(context).size.height;
+    deviceWidth = MediaQuery.of(context).size.width;
+    auth = Provider.of<AuthenticationProviderFirebase>(context, listen: false);
 
-    return MultiProvider(
-      providers: [
-        ChangeNotifierProvider<ChatPageProvider>(
-          create: (_) => ChatPageProvider(
-            widget.chat.uid,
-            _auth,
-            _messagesListViewController,
-          ),
-        ),
-      ],
-      child: _buildUI(),
+    return ChangeNotifierProvider<ChatPageProvider>(
+      create: (_) =>
+          ChatPageProvider(widget.chat.uid, auth, messagesController),
+      child: Builder(
+        builder: (context) {
+          final pageProvider = context.watch<ChatPageProvider>();
+          // Auto-scroll jika pesan baru masuk
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (messagesController.hasClients) {
+              messagesController.jumpTo(
+                messagesController.position.maxScrollExtent,
+              );
+            }
+          });
+          return Stack(
+            children: [
+              Scaffold(
+                backgroundColor: const Color(0xFF0A0A0F),
+                body: Container(
+                  decoration: const BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [Color(0xFF1A1A26), Color(0xFF0A0A0F)],
+                    ),
+                  ),
+                  child: SafeArea(
+                    child: Column(
+                      children: [
+                        buildTopBar(context, pageProvider),
+                        if (pageProvider.pinnedMessage != null)
+                          buildPinnedMessage(
+                            pageProvider,
+                            pageProvider.pinnedMessage!,
+                          ),
+                        buildTypingIndicator(
+                          pageProvider,
+                        ), // << fitur: typing status
+                        Expanded(child: buildMessageList(pageProvider)),
+                        if (isUploadingVoice) buildUploadVoiceIndicator(),
+                        buildUploadIndicator(),
+                        buildSendMessageForm(context),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+              // Loading overlay untuk upload image/voice
+              if (isImageUploading || isUploadingVoice)
+                Positioned.fill(
+                  child: Container(
+                    color: Colors.black38,
+                    child: const Center(
+                      child: CircularProgressIndicator(
+                        color: Color(0xFF6C5CE7),
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          );
+        },
+      ),
     );
   }
 
-  Widget _buildUI() {
-    final isTablet = _deviceWidth > 600;
-
-    return Builder(
-      builder: (BuildContext context) {
-        _pageProvider = context.watch<ChatPageProvider>();
-        return Scaffold(
-          backgroundColor: const Color(0xFF0A0A0F),
-          body: Container(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: [const Color(0xFF1A1A26), const Color(0xFF0A0A0F)],
-              ),
-            ),
-            child: SafeArea(
-              child: Column(
-                children: [
-                  _buildModernTopBar(),
-                  Expanded(child: _messageListView()),
-                  _buildUploadIndicator(),
-                  _sendMessageForm(),
-                ],
-              ),
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  Widget _buildModernTopBar() {
+  Widget buildTopBar(BuildContext context, ChatPageProvider provider) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       decoration: BoxDecoration(
-        color: const Color(0xFF1A1A26).withOpacity(0.8),
+        color: const Color(0xFF1A1A26).withOpacity(0.87),
         border: Border(
-          bottom: BorderSide(color: Colors.white.withOpacity(0.1), width: 1),
+          bottom: BorderSide(color: Colors.white.withOpacity(0.07), width: 1),
         ),
       ),
       child: Row(
         children: [
           IconButton(
             icon: const Icon(
-              Icons.arrow_back_ios_rounded,
+              Icons.arrow_back_ios_new_rounded,
               color: Color(0xFF6C5CE7),
               size: 22,
             ),
-            onPressed: () => _pageProvider.goBack(),
+            onPressed: () => provider.goBack(),
+            tooltip: "Kembali",
           ),
           const SizedBox(width: 8),
           CircleAvatar(
             radius: 20,
-            backgroundColor: const Color(0xFF6C5CE7).withOpacity(0.2),
+            backgroundColor: const Color(0xFF6C5CE7).withOpacity(0.18),
             child: Text(
               widget.chat.title().substring(0, 1).toUpperCase(),
               style: const TextStyle(
                 color: Color(0xFF6C5CE7),
                 fontWeight: FontWeight.bold,
+                fontSize: 18,
               ),
             ),
           ),
@@ -198,7 +247,7 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
                   ),
                 ),
                 Text(
-                  "Online",
+                  "Online", // Placeholder
                   style: TextStyle(
                     color: Colors.green.withOpacity(0.8),
                     fontSize: 12,
@@ -213,30 +262,67 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
               color: Colors.redAccent,
               size: 22,
             ),
-            onPressed: () => _pageProvider.deleteChat(),
+            onPressed: () => provider.deleteChat(),
+            tooltip: "Hapus chat",
           ),
         ],
       ),
     );
   }
 
-  Widget _buildUploadIndicator() {
-    return AnimatedBuilder(
-      animation: _imageUploadAnimation,
-      builder: (context, child) {
-        if (!_isImageUploading) return const SizedBox.shrink();
+  Widget buildPinnedMessage(ChatPageProvider provider, ChatMessage message) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+      child: Container(
+        decoration: BoxDecoration(
+          color: Colors.amber.withOpacity(0.15),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.amber.shade300, width: 1),
+        ),
+        padding: const EdgeInsets.all(10),
+        child: Row(
+          children: [
+            const Icon(Icons.push_pin_rounded, color: Colors.amber, size: 20),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                message.content,
+                style: const TextStyle(
+                  color: Colors.amber,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w500,
+                ),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            IconButton(
+              icon: const Icon(Icons.close_rounded, color: Colors.amber),
+              onPressed: () => provider.unpinMessage(),
+              tooltip: "Unpin pesan",
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 
+  Widget buildUploadIndicator() {
+    return AnimatedBuilder(
+      animation: imageUploadAnim,
+      builder: (context, child) {
+        if (!isImageUploading) return const SizedBox.shrink();
         return Container(
-          height: 60,
-          margin: const EdgeInsets.symmetric(horizontal: 16),
+          height: 54,
+          margin: const EdgeInsets.symmetric(horizontal: 18, vertical: 3),
           child: Row(
             children: [
               Container(
-                width: 40,
-                height: 40,
+                width: 38,
+                height: 38,
                 decoration: BoxDecoration(
-                  color: const Color(0xFF6C5CE7).withOpacity(0.2),
-                  borderRadius: BorderRadius.circular(20),
+                  color: const Color(0xFF6C5CE7).withOpacity(0.17),
+                  borderRadius: BorderRadius.circular(19),
                 ),
                 child: const CircularProgressIndicator(
                   strokeWidth: 2,
@@ -247,7 +333,7 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
               Text(
                 "Mengunggah gambar...",
                 style: TextStyle(
-                  color: Colors.white.withOpacity(0.7),
+                  color: Colors.white.withOpacity(0.74),
                   fontSize: 14,
                 ),
               ),
@@ -258,124 +344,182 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
     );
   }
 
-  Widget _messageListView() {
-    if (_pageProvider.messages != null) {
-      if (_pageProvider.messages!.isNotEmpty) {
-        return Container(
-          margin: const EdgeInsets.symmetric(horizontal: 8),
-          child: ListView.builder(
-            controller: _messagesListViewController,
-            padding: const EdgeInsets.symmetric(vertical: 16),
-            itemCount: _pageProvider.messages!.length,
-            itemBuilder: (BuildContext context, int index) {
-              ChatMessage message = _pageProvider.messages![index];
-              bool isOwnMessage = message.senderID == _auth.user!.uid;
-
-              final sender = widget.chat.members.firstWhere(
-                (m) => m.uid == message.senderID,
-                orElse: () => ChatUser(
-                  uid: '',
-                  name: 'Tidak Diketahui',
-                  email: '',
-                  imageUrl: '',
-                  lastActive: DateTime.now(),
-                ),
-              );
-
-              return AnimatedContainer(
-                duration: Duration(milliseconds: 300 + (index * 50)),
-                curve: Curves.easeOutBack,
-                child: CustomChatListViewTiles(
-                  deviceHeight: _deviceHeight,
-                  width: _deviceWidth * 0.80,
-                  message: message,
-                  isOwnMessage: isOwnMessage,
-                  sender: sender,
-                ),
-              );
-            },
+  Widget buildUploadVoiceIndicator() {
+    return Container(
+      height: 54,
+      margin: const EdgeInsets.symmetric(horizontal: 18, vertical: 3),
+      child: Row(
+        children: [
+          Container(
+            width: 38,
+            height: 38,
+            decoration: BoxDecoration(
+              color: Colors.orange.withOpacity(0.22),
+              borderRadius: BorderRadius.circular(19),
+            ),
+            child: const CircularProgressIndicator(
+              strokeWidth: 2,
+              valueColor: AlwaysStoppedAnimation<Color>(Colors.orange),
+            ),
           ),
-        );
-      } else {
-        return Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(
-                Icons.chat_bubble_outline_rounded,
-                size: 64,
-                color: Colors.white.withOpacity(0.3),
-              ),
-              const SizedBox(height: 16),
-              Text(
-                "Belum ada pesan",
-                style: TextStyle(
-                  color: Colors.white.withOpacity(0.6),
-                  fontSize: 16,
-                ),
-              ),
-              Text(
-                "Mulai percakapan!",
-                style: TextStyle(
-                  color: Colors.white.withOpacity(0.4),
-                  fontSize: 14,
-                ),
-              ),
-            ],
+          const SizedBox(width: 12),
+          Text(
+            "Mengunggah voice note...",
+            style: TextStyle(
+              color: Colors.white.withOpacity(0.8),
+              fontSize: 14,
+            ),
           ),
-        );
-      }
-    } else {
+        ],
+      ),
+    );
+  }
+
+  Widget buildTypingIndicator(ChatPageProvider pageProvider) {
+    // Placeholder, bisa dihubungkan ke stream typing/keystroke dari provider
+    // Fitur: indikator teman sedang mengetik
+    if (pageProvider.isSomeoneTyping == true) {
+      return Padding(
+        padding: const EdgeInsets.only(left: 18, bottom: 3),
+        child: Row(
+          children: [
+            const SizedBox(
+              width: 14,
+              height: 14,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                color: Colors.green,
+              ),
+            ),
+            const SizedBox(width: 6),
+            Text(
+              "Sedang mengetik...",
+              style: TextStyle(color: Colors.green.shade400, fontSize: 13),
+            ),
+          ],
+        ),
+      );
+    }
+    return const SizedBox.shrink();
+  }
+
+  Widget buildMessageList(ChatPageProvider provider) {
+    if (provider.messages == null) {
       return const Center(
         child: CircularProgressIndicator(color: Color(0xFF6C5CE7)),
       );
     }
+    if (provider.messages!.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.chat_bubble_outline_rounded,
+              size: 62,
+              color: Colors.white.withOpacity(0.3),
+            ),
+            const SizedBox(height: 14),
+            Text(
+              "Belum ada pesan",
+              style: TextStyle(
+                color: Colors.white.withOpacity(0.62),
+                fontSize: 16,
+              ),
+            ),
+            Text(
+              "Mulai percakapan!",
+              style: TextStyle(
+                color: Colors.white.withOpacity(0.38),
+                fontSize: 13,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 8),
+      child: ListView.builder(
+        controller: messagesController,
+        padding: const EdgeInsets.symmetric(vertical: 16),
+        itemCount: provider.messages!.length,
+        itemBuilder: (context, index) {
+          ChatMessage message = provider.messages![index];
+          bool isOwnMessage = message.senderID == auth.user!.uid;
+          final sender = widget.chat.members.firstWhere(
+            (m) => m.uid == message.senderID,
+            orElse: () => ChatUser(
+              uid: '',
+              name: 'Tidak Diketahui',
+              email: '',
+              imageUrl: '',
+              lastActive: DateTime.now(),
+            ),
+          );
+          return AnimatedContainer(
+            duration: Duration(milliseconds: 260 + (index * 40)),
+            curve: Curves.easeOutBack,
+            child: CustomChatListViewTiles(
+              deviceHeight: deviceHeight,
+              width: deviceWidth * 0.80,
+              message: message,
+              isOwnMessage: isOwnMessage,
+              sender: sender,
+            ),
+          );
+        },
+      ),
+    );
   }
 
-  Widget _sendMessageForm() {
+  Widget buildSendMessageForm(BuildContext context) {
     return Container(
       margin: const EdgeInsets.all(16),
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       decoration: BoxDecoration(
-        color: const Color(0xFF1A1A26).withOpacity(0.8),
+        color: const Color(0xFF1A1A26).withOpacity(0.88),
         borderRadius: BorderRadius.circular(25),
-        border: Border.all(color: Colors.white.withOpacity(0.1), width: 1),
+        border: Border.all(color: Colors.white.withOpacity(0.08), width: 1),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.3),
-            blurRadius: 10,
+            color: Colors.black.withOpacity(0.28),
+            blurRadius: 9,
             offset: const Offset(0, 5),
           ),
         ],
       ),
       child: Form(
-        key: _messageFormState,
+        key: messageFormKey,
         child: Row(
           children: [
-            Expanded(child: _messageTextField()),
-            const SizedBox(width: 8),
-            _imageMessageButton(),
-            const SizedBox(width: 8),
-            _sendMessageButton(),
+            Expanded(child: buildMessageTextField(context)),
+            const SizedBox(width: 7),
+            buildImageMessageButton(context),
+            const SizedBox(width: 7),
+            buildVoiceNoteButton(context),
+            const SizedBox(width: 7),
+            buildSendMessageButton(context),
           ],
         ),
       ),
     );
   }
 
-  Widget _messageTextField() {
+  Widget buildMessageTextField(BuildContext context) {
     return TextFormField(
       style: const TextStyle(color: Colors.white),
       decoration: InputDecoration(
         hintText: "Tulis pesan...",
         hintStyle: TextStyle(
-          color: Colors.white.withOpacity(0.5),
+          color: Colors.white.withOpacity(0.54),
           fontSize: 14,
         ),
         border: InputBorder.none,
-        contentPadding: const EdgeInsets.symmetric(vertical: 12),
+        contentPadding: const EdgeInsets.symmetric(vertical: 13),
       ),
-      onSaved: (value) => _pageProvider.message = value,
+      onSaved: (value) =>
+          Provider.of<ChatPageProvider>(context, listen: false).message = value,
       validator: (value) {
         if (value == null || value.trim().isEmpty) return null;
         return RegExp(
@@ -385,12 +529,20 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
             ? null
             : 'Karakter tidak valid';
       },
+      textInputAction: TextInputAction.send,
+      onFieldSubmitted: (_) => handleTextMessage(context),
+      onChanged: (_) {
+        Provider.of<ChatPageProvider>(context, listen: false).setTyping(true);
+      },
+      onEditingComplete: () {
+        Provider.of<ChatPageProvider>(context, listen: false).setTyping(false);
+      },
     );
   }
 
-  Widget _imageMessageButton() {
+  Widget buildImageMessageButton(BuildContext context) {
     return AnimatedBuilder(
-      animation: _imageUploadAnimation,
+      animation: imageUploadAnim,
       builder: (context, child) {
         return Container(
           width: 40,
@@ -402,7 +554,7 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
             borderRadius: BorderRadius.circular(20),
             boxShadow: [
               BoxShadow(
-                color: const Color(0xFF6C5CE7).withOpacity(0.3),
+                color: const Color(0xFF6C5CE7).withOpacity(0.28),
                 blurRadius: 8,
                 offset: const Offset(0, 2),
               ),
@@ -412,13 +564,13 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
             color: Colors.transparent,
             child: InkWell(
               borderRadius: BorderRadius.circular(20),
-              onTap: _isImageUploading ? null : _handleImageUpload,
+              onTap: isImageUploading ? null : () => handleImageUpload(context),
               child: Icon(
-                _isImageUploading
-                    ? Icons.hourglass_top_rounded
+                isImageUploading
+                    ? Icons.hourglass_empty_rounded
                     : Icons.photo_camera_rounded,
                 color: Colors.white,
-                size: 20,
+                size: 21,
               ),
             ),
           ),
@@ -427,12 +579,12 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
     );
   }
 
-  Widget _sendMessageButton() {
+  Widget buildSendMessageButton(BuildContext context) {
     return AnimatedBuilder(
-      animation: _sendButtonAnimation,
+      animation: sendButtonAnim,
       builder: (context, child) {
         return Transform.scale(
-          scale: _sendButtonAnimation.value,
+          scale: sendButtonAnim.value,
           child: Container(
             width: 40,
             height: 40,
@@ -443,7 +595,7 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
               borderRadius: BorderRadius.circular(20),
               boxShadow: [
                 BoxShadow(
-                  color: const Color(0xFF6C5CE7).withOpacity(0.3),
+                  color: const Color(0xFF6C5CE7).withOpacity(0.28),
                   blurRadius: 8,
                   offset: const Offset(0, 2),
                 ),
@@ -453,19 +605,76 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
               color: Colors.transparent,
               child: InkWell(
                 borderRadius: BorderRadius.circular(20),
-                onTap: _isMessageSending ? null : _handleTextMessage,
+                onTap: isMessageSending
+                    ? null
+                    : () => handleTextMessage(context),
                 child: Icon(
-                  _isMessageSending
-                      ? Icons.hourglass_top_rounded
+                  isMessageSending
+                      ? Icons.hourglass_empty_rounded
                       : Icons.send_rounded,
                   color: Colors.white,
-                  size: 18,
+                  size: 20,
                 ),
               ),
             ),
           ),
         );
       },
+    );
+  }
+
+  Widget buildVoiceNoteButton(BuildContext context) {
+    return Container(
+      width: 40,
+      height: 40,
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [Colors.orange.shade400, Colors.deepOrange.shade600],
+        ),
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.orange.withOpacity(0.20),
+            blurRadius: 7,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(20),
+          onTap: isRecording
+              ? null
+              : () async {
+                  await startRecording();
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: const Text(
+                        "Merekam... tekan lagi untuk stop & kirim!",
+                      ),
+                      duration: const Duration(seconds: 1),
+                    ),
+                  );
+                },
+          onLongPress: isRecording
+              ? () async {
+                  await stopRecording(context);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: const Text("Voice note dikirim!"),
+                      duration: const Duration(seconds: 1),
+                    ),
+                  );
+                }
+              : null,
+          child: Icon(
+            isRecording ? Icons.stop_circle_outlined : Icons.mic_rounded,
+            color: Colors.white,
+            size: 21,
+          ),
+        ),
+      ),
     );
   }
 }

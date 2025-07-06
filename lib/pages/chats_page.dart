@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:get_it/get_it.dart';
 import 'package:ourchat/models/chat.dart';
+import 'package:ourchat/models/chat_message.dart';
 import 'package:ourchat/models/chat_user.dart';
 import 'package:ourchat/pages/chat_page.dart';
 import 'package:ourchat/providers/authentication_provider_firebase.dart';
@@ -67,6 +68,21 @@ class _ChatsPageState extends State<ChatsPage> with TickerProviderStateMixin {
       }
     }
     return members;
+  }
+
+  Future<ChatMessage?> fetchPinnedMessage(String chatId) async {
+    final db = FirebaseFirestore.instance;
+    final pinnedRef = db
+        .collection('chats')
+        .doc(chatId)
+        .collection('pinned')
+        .doc('pinnedMessage');
+    final doc = await pinnedRef.get();
+    if (doc.exists) {
+      final data = doc.data()!;
+      return ChatMessage.fromJson(data);
+    }
+    return null;
   }
 
   @override
@@ -297,108 +313,153 @@ class _ChatsPageState extends State<ChatsPage> with TickerProviderStateMixin {
             imageUrl = otherUser.imageUrl;
           }
 
-          return Container(
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(16),
-              gradient: const LinearGradient(
-                colors: [Color(0xFF1E1E2E), Color(0xFF2A2A3E)],
-              ),
-              border: Border.all(
-                color: Colors.white.withOpacity(0.1),
-                width: 1,
-              ),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.2),
-                  blurRadius: 10,
-                  offset: const Offset(0, 4),
+          return FutureBuilder<ChatMessage?>(
+            future: fetchPinnedMessage(chatDoc.id),
+            builder: (context, pinnedSnapshot) {
+              final pinned = pinnedSnapshot.data;
+              return Container(
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(16),
+                  gradient: const LinearGradient(
+                    colors: [Color(0xFF1E1E2E), Color(0xFF2A2A3E)],
+                  ),
+                  border: Border.all(
+                    color: Colors.white.withOpacity(0.1),
+                    width: 1,
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.2),
+                      blurRadius: 10,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
                 ),
-              ],
-            ),
-            child: Material(
-              color: Colors.transparent,
-              child: InkWell(
-                borderRadius: BorderRadius.circular(16),
-                onTap: () {
-                  _navigation.navigateToPage(
-                    ChatPage(
-                      chat: Chat(
-                        uid: chatDoc.id,
-                        currentUserUid: currentUserUid,
-                        activity: chatData['activity'] ?? false,
-                        group: isGroup,
-                        members: chatMembers,
-                        messages: [],
+                child: Material(
+                  color: Colors.transparent,
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(16),
+                    onTap: () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => ChatPage(
+                            chat: Chat(
+                              uid: chatDoc.id,
+                              currentUserUid: currentUserUid,
+                              activity: chatData['activity'] ?? false,
+                              group: isGroup,
+                              members: chatMembers,
+                              messages: [],
+                              pinnedMessage: pinned,
+                            ),
+                          ),
+                        ),
+                      );
+                    },
+                    child: Padding(
+                      padding: EdgeInsets.all(isTablet ? 20 : 16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Container(
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: const Color(
+                                        0xFF667EEA,
+                                      ).withOpacity(0.3),
+                                      blurRadius: 8,
+                                      offset: const Offset(0, 2),
+                                    ),
+                                  ],
+                                ),
+                                child: CircleAvatar(
+                                  radius: isTablet ? 28 : 24,
+                                  backgroundColor: const Color(0xFF667EEA),
+                                  backgroundImage: imageUrl.isNotEmpty
+                                      ? NetworkImage(imageUrl)
+                                      : null,
+                                  child: imageUrl.isEmpty
+                                      ? Icon(
+                                          Icons.person_rounded,
+                                          color: Colors.white,
+                                          size: isTablet ? 28 : 24,
+                                        )
+                                      : null,
+                                ),
+                              ),
+                              SizedBox(width: isTablet ? 20 : 16),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      title,
+                                      style: TextStyle(
+                                        color: Colors.white,
+                                        fontSize: isTablet ? 18 : 16,
+                                        fontWeight: FontWeight.w600,
+                                        letterSpacing: -0.3,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      subtitle,
+                                      style: TextStyle(
+                                        color: Colors.white60,
+                                        fontSize: isTablet ? 14 : 12,
+                                        fontWeight: FontWeight.w400,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              Icon(
+                                Icons.arrow_forward_ios_rounded,
+                                color: Colors.white30,
+                                size: isTablet ? 20 : 16,
+                              ),
+                            ],
+                          ),
+                          if (pinned != null)
+                            Padding(
+                              padding: const EdgeInsets.only(
+                                top: 8.0,
+                                left: 8.0,
+                              ),
+                              child: Row(
+                                children: [
+                                  const Icon(
+                                    Icons.push_pin,
+                                    color: Colors.amber,
+                                    size: 18,
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Text(
+                                      pinned.content,
+                                      style: const TextStyle(
+                                        color: Colors.amber,
+                                        fontWeight: FontWeight.w500,
+                                        fontSize: 13,
+                                      ),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                        ],
                       ),
                     ),
-                  );
-                },
-                child: Padding(
-                  padding: EdgeInsets.all(isTablet ? 20 : 16),
-                  child: Row(
-                    children: [
-                      Container(
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          boxShadow: [
-                            BoxShadow(
-                              color: const Color(0xFF667EEA).withOpacity(0.3),
-                              blurRadius: 8,
-                              offset: const Offset(0, 2),
-                            ),
-                          ],
-                        ),
-                        child: CircleAvatar(
-                          radius: isTablet ? 28 : 24,
-                          backgroundColor: const Color(0xFF667EEA),
-                          backgroundImage: imageUrl.isNotEmpty
-                              ? NetworkImage(imageUrl)
-                              : null,
-                          child: imageUrl.isEmpty
-                              ? Icon(
-                                  Icons.person_rounded,
-                                  color: Colors.white,
-                                  size: isTablet ? 28 : 24,
-                                )
-                              : null,
-                        ),
-                      ),
-                      SizedBox(width: isTablet ? 20 : 16),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              title,
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontSize: isTablet ? 18 : 16,
-                                fontWeight: FontWeight.w600,
-                                letterSpacing: -0.3,
-                              ),
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              subtitle,
-                              style: TextStyle(
-                                color: Colors.white60,
-                                fontSize: isTablet ? 14 : 12,
-                                fontWeight: FontWeight.w400,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      Icon(
-                        Icons.arrow_forward_ios_rounded,
-                        color: Colors.white30,
-                        size: isTablet ? 20 : 16,
-                      ),
-                    ],
                   ),
                 ),
-              ),
-            ),
+              );
+            },
           );
         },
       ),

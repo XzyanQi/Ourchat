@@ -8,6 +8,7 @@ class Chat {
   final bool group;
   final List<ChatUser> members;
   List<ChatMessage> messages;
+  final ChatMessage? pinnedMessage;
 
   Chat({
     required this.uid,
@@ -16,6 +17,7 @@ class Chat {
     required this.group,
     required this.members,
     required this.messages,
+    this.pinnedMessage,
   });
 
   List<ChatUser> get recipients =>
@@ -31,5 +33,25 @@ class Chat {
     return !group
         ? (recipients.isNotEmpty ? recipients.first.imageUrl : "")
         : "https://e7.pngegg.com/pngimages/799/666/png-clipart-computer-icons-avatar-icon-design-avatar-heroes-computer-wallpaper-thumbnail.png";
+  }
+
+  Chat copyWith({
+    String? uid,
+    String? currentUserUid,
+    bool? activity,
+    bool? group,
+    List<ChatUser>? members,
+    List<ChatMessage>? messages,
+    ChatMessage? pinnedMessage,
+  }) {
+    return Chat(
+      uid: uid ?? this.uid,
+      currentUserUid: currentUserUid ?? this.currentUserUid,
+      activity: activity ?? this.activity,
+      group: group ?? this.group,
+      members: members ?? this.members,
+      messages: messages ?? this.messages,
+      pinnedMessage: pinnedMessage ?? this.pinnedMessage,
+    );
   }
 }

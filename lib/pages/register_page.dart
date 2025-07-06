@@ -617,7 +617,6 @@ class _RegisterPageState extends State<RegisterPage>
       // Simpan data user ke Firestore
       await _db.createUser(uid, name!, email!, imageUrl);
 
-      // Feedback sukses
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(

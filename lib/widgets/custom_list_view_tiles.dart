@@ -2,8 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_spinkit/flutter_spinkit.dart';
 import 'package:ourchat/models/chat_message.dart';
 import 'package:ourchat/models/chat_user.dart';
+import 'package:ourchat/providers/chat_page_provider.dart';
 import 'package:ourchat/widgets/message_bubbles.dart';
 import 'package:ourchat/widgets/rounded_image.dart';
+import 'package:provider/provider.dart';
 
 class CustomListViewTile extends StatelessWidget {
   final String title;
@@ -137,6 +139,55 @@ class CustomChatListViewTiles extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final double maxBubbleWidth = width * 0.65;
+    final pageProvider = Provider.of<ChatPageProvider>(context, listen: false);
+
+    void handleDelete() {
+      pageProvider.deleteMessage(message);
+    }
+
+    void handleEdit() {
+      pageProvider.editMessage(context, message);
+    }
+
+    void handlePin() {
+      pageProvider.pinMessage(message);
+    }
+
+    Widget bubbleWidget;
+    switch (message.type) {
+      case MessageType.TEXT:
+        bubbleWidget = TextMessageBubble(
+          isOwnMessage: isOwnMessage,
+          message: message,
+          width: maxBubbleWidth,
+          onDelete: handleDelete,
+          onEdit: handleEdit,
+          onPin: handlePin,
+        );
+        break;
+      case MessageType.IMAGE:
+        bubbleWidget = ImageMessageBubble(
+          isOwnMessage: isOwnMessage,
+          message: message,
+          width: maxBubbleWidth,
+          onDelete: handleDelete,
+          onEdit: handleEdit,
+          onPin: handlePin,
+        );
+        break;
+      case MessageType.VOICE:
+        bubbleWidget = VoiceMessageBubble(
+          isOwnMessage: isOwnMessage,
+          audioUrl: message.content,
+        );
+        break;
+      default:
+        bubbleWidget = Text(
+          "Pesan tidak dikenali",
+          style: TextStyle(color: Colors.white54),
+        );
+        break;
+    }
 
     return Container(
       padding: const EdgeInsets.only(bottom: 10),
@@ -159,17 +210,7 @@ class CustomChatListViewTiles extends StatelessWidget {
                 left: isOwnMessage ? 32 : 0,
                 right: !isOwnMessage ? 32 : 0,
               ),
-              child: message.type == MessageType.TEXT
-                  ? TextMessageBubble(
-                      isOwnMessage: isOwnMessage,
-                      message: message,
-                      width: maxBubbleWidth,
-                    )
-                  : ImageMessageBubble(
-                      isOwnMessage: isOwnMessage,
-                      message: message,
-                      width: maxBubbleWidth,
-                    ),
+              child: bubbleWidget,
             ),
           ),
         ],

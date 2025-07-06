@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
@@ -26,11 +27,33 @@ class ChatPageProvider extends ChangeNotifier {
   final String _chatId;
   List<ChatMessage>? messages;
   String? _message;
+  ChatMessage? pinnedMessage;
 
   String? get message => _message;
-
   set message(String? value) {
     _message = value;
+  }
+
+  bool _isSomeoneTyping = false;
+  bool get isSomeoneTyping => _isSomeoneTyping;
+
+  Timer? _typingTimer;
+
+  void setTyping(bool isTyping) {
+    if (_isSomeoneTyping != isTyping) {
+      _isSomeoneTyping = isTyping;
+      notifyListeners();
+    }
+
+    if (isTyping) {
+      _typingTimer?.cancel();
+      _typingTimer = Timer(const Duration(seconds: 3), () {
+        _isSomeoneTyping = false;
+        notifyListeners();
+      });
+    } else {
+      _typingTimer?.cancel();
+    }
   }
 
   ChatPageProvider(this._chatId, this._auth, this._messageListViewController) {
@@ -41,6 +64,7 @@ class ChatPageProvider extends ChangeNotifier {
     _keyboardVisibilityController = KeyboardVisibilityController();
     listenToMessages();
     listenToKeyboardChanges();
+    getPinnedMessage();
   }
 
   @override
@@ -126,6 +150,34 @@ class ChatPageProvider extends ChangeNotifier {
     }
   }
 
+  Future<void> sendVoiceMessage(File file) async {
+    try {
+      String fileExt = file.path.split('.').last.toLowerCase();
+      final allowedExtensions = ['m4a', 'mp3', 'wav', 'aac', 'ogg'];
+      if (!allowedExtensions.contains(fileExt)) {
+        debugPrint("Hanya file audio yang diizinkan!");
+        return;
+      }
+      String? downloadURL = await _supabaseStorage.uploadChatVoiceNoteFile(
+        chatId: _chatId,
+        userId: _auth.user!.uid,
+        file: file,
+      );
+      if (downloadURL != null) {
+        ChatMessage messageToSend = ChatMessage(
+          content: downloadURL,
+          type: MessageType.VOICE,
+          senderID: _auth.user!.uid,
+          sentTime: DateTime.now(),
+        );
+        await _db.addMessageToChat(_chatId, messageToSend);
+      }
+    } catch (e) {
+      debugPrint("Gagal mengirim pesan suara.");
+      debugPrint(e.toString());
+    }
+  }
+
   void deleteChat() {
     goBack();
     _db.deleteChat(_chatId);
@@ -133,5 +185,82 @@ class ChatPageProvider extends ChangeNotifier {
 
   void goBack() {
     _navigation.goBack();
+  }
+
+  Future<void> deleteMessage(ChatMessage message) async {
+    try {
+      await _db.deleteMessageFromChat(_chatId, message);
+      // Jika pesan terpin dihapus, unpin
+      if (pinnedMessage != null &&
+          pinnedMessage!.sentTime == message.sentTime &&
+          pinnedMessage!.senderID == message.senderID) {
+        await unpinMessage();
+      }
+    } catch (e) {
+      debugPrint("Gagal menghapus pesan: $e");
+    }
+  }
+
+  Future<void> editMessage(BuildContext context, ChatMessage message) async {
+    if (message.type != MessageType.TEXT || message.senderID != _auth.user?.uid)
+      return;
+    TextEditingController controller = TextEditingController(
+      text: message.content,
+    );
+    String? newContent = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text("Edit Pesan"),
+        content: TextField(
+          controller: controller,
+          decoration: const InputDecoration(hintText: "Edit pesan..."),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text("Batal"),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, controller.text),
+            child: const Text("Simpan"),
+          ),
+        ],
+      ),
+    );
+    if (newContent != null &&
+        newContent.trim().isNotEmpty &&
+        newContent != message.content) {
+      await _db.updateMessageInChat(_chatId, message, newContent.trim());
+    }
+  }
+
+  Future<void> pinMessage(ChatMessage message) async {
+    try {
+      await _db.setPinnedMessage(_chatId, message);
+      pinnedMessage = message;
+      notifyListeners();
+    } catch (e) {
+      debugPrint("Gagal pin pesan: $e");
+    }
+  }
+
+  Future<void> unpinMessage() async {
+    try {
+      await _db.clearPinnedMessage(_chatId);
+      pinnedMessage = null;
+      notifyListeners();
+    } catch (e) {
+      debugPrint("Gagal unpin pesan: $e");
+    }
+  }
+
+  Future<void> getPinnedMessage() async {
+    try {
+      ChatMessage? pinned = await _db.getPinnedMessage(_chatId);
+      pinnedMessage = pinned;
+      notifyListeners();
+    } catch (e) {
+      debugPrint("Gagal mengambil pesan pin: $e");
+    }
   }
 }

@@ -22,7 +22,7 @@ class DatabaseService {
         "name": name,
         "email": email,
         "imageUrl": imageUrl,
-        "lastActive": DateTime.now().toUtc(),
+        "lastActive": FieldValue.serverTimestamp(),
       });
     } catch (e) {
       print("createUser error: $e");
@@ -35,10 +35,9 @@ class DatabaseService {
 
   Future<QuerySnapshot> getUsers({String? name}) {
     Query _query = _db.collection(USER_COLLECTION);
-    if (name != null) {
-      _query = _query
-          .where("name", isGreaterThanOrEqualTo: name)
-          .where("name", isLessThanOrEqualTo: name + 'z');
+    if (name != null && name.isNotEmpty) {
+      // Prefix search, case sensitive
+      _query = _query.orderBy('name').startAt([name]).endAt([name + '\uf8ff']);
     }
     return _query.get();
   }
@@ -69,22 +68,29 @@ class DatabaseService {
         .snapshots();
   }
 
-  Future<void> addMessageToChat(String chatId, ChatMessage message) async {
+  Future<DocumentReference?> addMessageToChat(
+    String chatId,
+    ChatMessage message,
+  ) async {
     try {
-      await _db
+      final json = message.toJson();
+      json['sent_time'] = FieldValue.serverTimestamp();
+      final docRef = await _db
           .collection(CHAT_COLLECTION)
           .doc(chatId)
           .collection(MESSAGE_COLLECTION)
-          .add(message.toJson());
+          .add(json);
+      return docRef;
     } catch (e) {
       print("addMessageToChat error: $e");
+      return null;
     }
   }
 
   Future<void> updateUserLastSeenTime(String uid) async {
     try {
       await _db.collection(USER_COLLECTION).doc(uid).update({
-        "lastActive": DateTime.now().toUtc(),
+        "lastActive": FieldValue.serverTimestamp(),
       });
     } catch (e) {
       print("updateUserLastSeenTime error: $e");
@@ -115,5 +121,68 @@ class DatabaseService {
       print("createChat error: $e");
       return null;
     }
+  }
+
+  Future<void> deleteMessageFromChat(String chatId, ChatMessage message) async {
+    QuerySnapshot snap = await _db
+        .collection(CHAT_COLLECTION)
+        .doc(chatId)
+        .collection(MESSAGE_COLLECTION)
+        .where('sent_time', isEqualTo: Timestamp.fromDate(message.sentTime))
+        .where('sender_id', isEqualTo: message.senderID)
+        .get();
+
+    for (var doc in snap.docs) {
+      await doc.reference.delete();
+    }
+  }
+
+  Future<void> updateMessageInChat(
+    String chatId,
+    ChatMessage message,
+    String newContent,
+  ) async {
+    QuerySnapshot snap = await _db
+        .collection(CHAT_COLLECTION)
+        .doc(chatId)
+        .collection(MESSAGE_COLLECTION)
+        .where('sent_time', isEqualTo: Timestamp.fromDate(message.sentTime))
+        .where('sender_id', isEqualTo: message.senderID)
+        .get();
+
+    for (var doc in snap.docs) {
+      await doc.reference.update({'content': newContent});
+    }
+  }
+
+  Future<void> setPinnedMessage(String chatId, ChatMessage message) async {
+    await _db
+        .collection(CHAT_COLLECTION)
+        .doc(chatId)
+        .collection('pinned')
+        .doc('pinnedMessage')
+        .set(message.toJson());
+  }
+
+  Future<void> clearPinnedMessage(String chatId) async {
+    await _db
+        .collection(CHAT_COLLECTION)
+        .doc(chatId)
+        .collection('pinned')
+        .doc('pinnedMessage')
+        .delete();
+  }
+
+  Future<ChatMessage?> getPinnedMessage(String chatId) async {
+    DocumentSnapshot doc = await _db
+        .collection(CHAT_COLLECTION)
+        .doc(chatId)
+        .collection('pinned')
+        .doc('pinnedMessage')
+        .get();
+    if (doc.exists && doc.data() != null) {
+      return ChatMessage.fromJson(doc.data() as Map<String, dynamic>);
+    }
+    return null;
   }
 }
