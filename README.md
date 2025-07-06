@@ -23,7 +23,7 @@ OurChat dibangun sepenuhnya dengan teknologi cross-platform sehingga dapat dijal
 
 ## Roadmap
 Ke depannya, beberapa fitur baru direncanakan untuk meningkatkan OurChat:
-- Voice Note (Pesan Suara) – Menambahkan kemampuan merekam audio dan mengirimnya sebagai pesan suara di dalam chat < Sudah Clear.
+- Voice Note (Pesan Suara) – Menambahkan kemampuan merekam audio dan mengirimnya sebagai pesan suara di dalam chat < Masih ada bug.
 - Peningkatan Lain – Perbaikan antarmuka pengguna, optimalisasi performa, dan dukungan fitur-fitur tambahan berdasarkan masukan (misalnya notifikasi push untuk pesan baru, indikator "sedang mengetik", dll).
 
 ## Kontribusi
