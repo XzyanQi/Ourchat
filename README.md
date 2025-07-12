@@ -4,6 +4,7 @@ OurChat adalah aplikasi chat modern yang dibangun menggunakan Flutter. Aplikasi 
 ## Fitur Utama
 - Autentikasi Pengguna – Pengguna dapat mendaftar akun baru dan masuk (login) menggunakan email dan password melalui Firebase Authentication. Juga mendukung fitur lupa password untuk reset kata sandi via email.
 - Profil dengan Foto – Saat mendaftar, pengguna bisa mengunggah foto profil. Foto disimpan di storage Supabase, dan URL foto tersebut disimpan di Cloud Firestore untuk ditampilkan dalam aplikasi.
+- Update user dan profil
 - Chat Personal & Grup – OurChat mendukung obrolan satu-satu dan obrolan grup (beberapa pengguna dalam satu percakapan). Setiap chat menampilkan nama obrolan (atau daftar anggota untuk grup) beserta status online/terakhir aktif.
 - Pesan Teks Real-time – Kirim dan terima pesan teks secara real-time. Percakapan terupdate seketika menggunakan Cloud Firestore sehingga pengguna dapat berbincang tanpa hambatan.
 - Berbagi Gambar – Unggah dan kirim gambar/foto di dalam chat. Gambar akan diunggah ke Supabase storage, dan tautan gambarnya dibagikan di chat sehingga pengguna lain dapat melihatnya langsung di percakapan.
@@ -23,7 +24,6 @@ OurChat dibangun sepenuhnya dengan teknologi cross-platform sehingga dapat dijal
 
 ## Roadmap
 Ke depannya, beberapa fitur baru direncanakan untuk meningkatkan OurChat:
-- Voice Note (Pesan Suara) – Menambahkan kemampuan merekam audio dan mengirimnya sebagai pesan suara di dalam chat < Masih ada bug.
 - Peningkatan Lain – Perbaikan antarmuka pengguna, optimalisasi performa, dan dukungan fitur-fitur tambahan berdasarkan masukan (misalnya notifikasi push untuk pesan baru, indikator "sedang mengetik", dll).
 
 ## Kontribusi
