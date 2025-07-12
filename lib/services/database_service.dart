@@ -33,6 +33,14 @@ class DatabaseService {
     return _db.collection(USER_COLLECTION).doc(uid).get();
   }
 
+  Future<void> updateUserData(String uid, Map<String, dynamic> data) async {
+    try {
+      await _db.collection(USER_COLLECTION).doc(uid).update(data);
+    } catch (e) {
+      print("updateUserData error: $e");
+    }
+  }
+
   Future<QuerySnapshot> getUsers({String? name}) {
     Query _query = _db.collection(USER_COLLECTION);
     if (name != null && name.isNotEmpty) {

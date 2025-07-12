@@ -1,7 +1,8 @@
 import 'dart:io';
 
+import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
-import 'package:flutter_sound/flutter_sound.dart';
 import 'package:ourchat/models/chat.dart';
 import 'package:ourchat/models/chat_message.dart';
 import 'package:ourchat/models/chat_user.dart';
@@ -9,7 +10,9 @@ import 'package:ourchat/providers/authentication_provider_firebase.dart';
 import 'package:ourchat/providers/chat_page_provider.dart';
 import 'package:ourchat/widgets/custom_list_view_tiles.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:provider/provider.dart';
+import 'package:record/record.dart';
 
 class ChatPage extends StatefulWidget {
   final Chat chat;
@@ -34,9 +37,8 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
   bool isMessageSending = false;
   bool isRecording = false;
   bool isUploadingVoice = false;
-  String? recordedVoicePath;
 
-  FlutterSoundRecorder? recorder;
+  final AudioRecorder _audioRecorder = AudioRecorder();
 
   @override
   void initState() {
@@ -58,12 +60,25 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
     imageUploadAnim = Tween<double>(begin: 0.0, end: 1.0).animate(
       CurvedAnimation(parent: imageUploadCtrl, curve: Curves.easeInOut),
     );
-    recorder = FlutterSoundRecorder();
-    _initRecorder();
+
+    if (!kIsWeb) {
+      _checkPermissions();
+    }
   }
 
-  Future<void> _initRecorder() async {
-    await recorder!.openRecorder();
+  Future<void> _checkPermissions() async {
+    final status = await Permission.microphone.request();
+    if (!status.isGranted) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              "Izin mikrofon diperlukan untuk merekam pesan suara.",
+            ),
+          ),
+        );
+      }
+    }
   }
 
   @override
@@ -71,8 +86,15 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
     sendButtonCtrl.dispose();
     imageUploadCtrl.dispose();
     messagesController.dispose();
-    recorder?.closeRecorder();
+    _disposeAudioRecorder();
     super.dispose();
+  }
+
+  Future<void> _disposeAudioRecorder() async {
+    if (await _audioRecorder.isRecording()) {
+      await _audioRecorder.stop();
+    }
+    _audioRecorder.dispose();
   }
 
   Future<void> handleImageUpload(BuildContext context) async {
@@ -100,31 +122,130 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
     }
   }
 
-  // Voice Note Logic
-  Future<void> startRecording() async {
-    final tempDir = await getTemporaryDirectory();
-    final path =
-        '${tempDir.path}/voice_note_${DateTime.now().millisecondsSinceEpoch}.aac';
-    await recorder!.startRecorder(toFile: path, codec: Codec.aacADTS);
-    setState(() {
-      isRecording = true;
-      recordedVoicePath = path;
-    });
+  Future<void> startVoiceRecording() async {
+    try {
+      if (!await _audioRecorder.hasPermission()) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Izin mikrofon tidak diberikan.")),
+        );
+        return;
+      }
+
+      String outputPath;
+      if (!kIsWeb) {
+        final Directory tempDir = await getTemporaryDirectory();
+        outputPath =
+            '${tempDir.path}/voice_note_${DateTime.now().millisecondsSinceEpoch}.m4a';
+      } else {
+        // dummy
+        outputPath = 'dummy_path_for_web.webm';
+      }
+
+      final AudioEncoder encoder = kIsWeb
+          ? AudioEncoder.opus
+          : AudioEncoder.aacLc;
+      final RecordConfig config = RecordConfig(
+        encoder: encoder,
+        numChannels: 1,
+      );
+
+      await _audioRecorder.start(config, path: outputPath);
+
+      setState(() {
+        isRecording = true;
+      });
+      debugPrint("Recording started. Path: ${outputPath}");
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text("Merekam... tekan lagi untuk stop & kirim!"),
+            duration: Duration(seconds: 1),
+          ),
+        );
+      }
+    } catch (e) {
+      debugPrint("Error starting recording: $e");
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("Gagal memulai perekaman: ${e.toString()}")),
+        );
+      }
+    }
   }
 
-  Future<void> stopRecording(BuildContext context) async {
-    await recorder!.stopRecorder();
-    setState(() => isRecording = false);
-    if (recordedVoicePath != null) {
-      setState(() => isUploadingVoice = true);
-      await Provider.of<ChatPageProvider>(
-        context,
-        listen: false,
-      ).sendVoiceMessage(File(recordedVoicePath!));
-      setState(() {
-        recordedVoicePath = null;
-        isUploadingVoice = false;
-      });
+  Future<void> stopVoiceRecording(BuildContext context) async {
+    try {
+      final String? path = await _audioRecorder.stop();
+      setState(() => isRecording = false);
+      debugPrint("Recording stopped. File path: $path");
+
+      if (path != null) {
+        setState(() => isUploadingVoice = true);
+
+        await Provider.of<ChatPageProvider>(
+          context,
+          listen: false,
+        ).sendVoiceMessageFromPath(path);
+
+        setState(() {
+          isUploadingVoice = false;
+        });
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text("Voice note dikirim!"),
+              duration: Duration(seconds: 1),
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      debugPrint("Error stopping recording: $e");
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text("Gagal menghentikan perekaman: ${e.toString()}"),
+          ),
+        );
+      }
+    }
+  }
+
+  // Metode untuk memilih dan mengirim file audio dari web
+  Future<void> _pickAndSendAudioWeb(BuildContext context) async {
+    FilePickerResult? result = await FilePicker.platform.pickFiles(
+      type: FileType.audio,
+      allowMultiple: false,
+    );
+
+    if (result != null && result.files.isNotEmpty) {
+      PlatformFile file = result.files.first;
+
+      if (file.bytes != null) {
+        setState(() => isUploadingVoice = true);
+        await Provider.of<ChatPageProvider>(
+          context,
+          listen: false,
+        ).sendVoiceMessageFromBytes(file.bytes!, file.name);
+        setState(() => isUploadingVoice = false);
+        if (mounted) {
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(const SnackBar(content: Text("File audio dikirim!")));
+        }
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text("Gagal membaca file audio.")),
+          );
+        }
+      }
+    } else {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Tidak ada file audio yang dipilih.")),
+        );
+      }
     }
   }
 
@@ -140,7 +261,6 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
       child: Builder(
         builder: (context) {
           final pageProvider = context.watch<ChatPageProvider>();
-          // Auto-scroll jika pesan baru masuk
           WidgetsBinding.instance.addPostFrameCallback((_) {
             if (messagesController.hasClients) {
               messagesController.jumpTo(
@@ -169,19 +289,16 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
                             pageProvider,
                             pageProvider.pinnedMessage!,
                           ),
-                        buildTypingIndicator(
-                          pageProvider,
-                        ), // << fitur: typing status
+                        buildTypingIndicator(pageProvider),
                         Expanded(child: buildMessageList(pageProvider)),
                         if (isUploadingVoice) buildUploadVoiceIndicator(),
-                        buildUploadIndicator(),
+                        if (isImageUploading) buildUploadIndicator(),
                         buildSendMessageForm(context),
                       ],
                     ),
                   ),
                 ),
               ),
-              // Loading overlay untuk upload image/voice
               if (isImageUploading || isUploadingVoice)
                 Positioned.fill(
                   child: Container(
@@ -224,14 +341,19 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
           CircleAvatar(
             radius: 20,
             backgroundColor: const Color(0xFF6C5CE7).withOpacity(0.18),
-            child: Text(
-              widget.chat.title().substring(0, 1).toUpperCase(),
-              style: const TextStyle(
-                color: Color(0xFF6C5CE7),
-                fontWeight: FontWeight.bold,
-                fontSize: 18,
-              ),
-            ),
+            backgroundImage: widget.chat.imageUrl.isNotEmpty
+                ? NetworkImage(widget.chat.imageUrl)
+                : null,
+            child: widget.chat.imageUrl.isEmpty
+                ? Text(
+                    widget.chat.title().substring(0, 1).toUpperCase(),
+                    style: const TextStyle(
+                      color: Color(0xFF6C5CE7),
+                      fontWeight: FontWeight.bold,
+                      fontSize: 18,
+                    ),
+                  )
+                : null,
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -247,9 +369,15 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
                   ),
                 ),
                 Text(
-                  "Online", // Placeholder
+                  widget.chat.activity
+                      ? "Online"
+                      : (widget.chat.members.length == 2
+                            ? _getOtherMemberStatus(widget.chat)
+                            : "Offline"),
                   style: TextStyle(
-                    color: Colors.green.withOpacity(0.8),
+                    color: widget.chat.activity
+                        ? Colors.green.withOpacity(0.8)
+                        : Colors.white54,
                     fontSize: 12,
                   ),
                 ),
@@ -268,6 +396,47 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
         ],
       ),
     );
+  }
+
+  String _getOtherMemberStatus(Chat chat) {
+    if (auth.user == null) return "Offline";
+
+    final otherMember = chat.members.firstWhere(
+      (m) => m.uid != auth.user!.uid,
+      orElse: () => ChatUser(
+        uid: '',
+        name: 'N/A',
+        email: '',
+        imageUrl: '',
+        lastActive: DateTime.now().subtract(const Duration(days: 365)),
+      ),
+    );
+
+    if (otherMember.uid.isEmpty) return "Offline";
+
+    return _formatLastActive(otherMember.lastActive);
+  }
+
+  String _formatLastActive(DateTime? lastActive) {
+    if (lastActive == null) {
+      return "Tidak diketahui";
+    }
+    final now = DateTime.now();
+    final difference = now.difference(lastActive);
+
+    if (difference.inDays > 7) {
+      return "${lastActive.day}/${lastActive.month}/${lastActive.year}";
+    } else if (difference.inDays > 1) {
+      return "${difference.inDays} hari yang lalu";
+    } else if (difference.inDays == 1) {
+      return "Kemarin";
+    } else if (difference.inHours >= 1) {
+      return "${difference.inHours} jam yang lalu";
+    } else if (difference.inMinutes >= 1) {
+      return "${difference.inMinutes} menit yang lalu";
+    } else {
+      return "Baru saja";
+    }
   }
 
   Widget buildPinnedMessage(ChatPageProvider provider, ChatMessage message) {
@@ -376,8 +545,6 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
   }
 
   Widget buildTypingIndicator(ChatPageProvider pageProvider) {
-    // Placeholder, bisa dihubungkan ke stream typing/keystroke dari provider
-    // Fitur: indikator teman sedang mengetik
     if (pageProvider.isSomeoneTyping == true) {
       return Padding(
         padding: const EdgeInsets.only(left: 18, bottom: 3),
@@ -548,8 +715,8 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
           width: 40,
           height: 40,
           decoration: BoxDecoration(
-            gradient: LinearGradient(
-              colors: [const Color(0xFF6C5CE7), const Color(0xFF5B4FE0)],
+            gradient: const LinearGradient(
+              colors: [Color(0xFF6C5CE7), Color(0xFF5B4FE0)],
             ),
             borderRadius: BorderRadius.circular(20),
             boxShadow: [
@@ -589,8 +756,8 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
             width: 40,
             height: 40,
             decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: [const Color(0xFF6C5CE7), const Color(0xFF5B4FE0)],
+              gradient: const LinearGradient(
+                colors: [Color(0xFF6C5CE7), Color(0xFF5B4FE0)],
               ),
               borderRadius: BorderRadius.circular(20),
               boxShadow: [
@@ -644,32 +811,24 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
         color: Colors.transparent,
         child: InkWell(
           borderRadius: BorderRadius.circular(20),
-          onTap: isRecording
-              ? null
-              : () async {
-                  await startRecording();
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: const Text(
-                        "Merekam... tekan lagi untuk stop & kirim!",
-                      ),
-                      duration: const Duration(seconds: 1),
-                    ),
-                  );
-                },
-          onLongPress: isRecording
-              ? () async {
-                  await stopRecording(context);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: const Text("Voice note dikirim!"),
-                      duration: const Duration(seconds: 1),
-                    ),
-                  );
-                }
-              : null,
+          onTap: () async {
+            if (kIsWeb) {
+              await _pickAndSendAudioWeb(context);
+            } else {
+              bool currentlyRecording = await _audioRecorder.isRecording();
+              if (currentlyRecording) {
+                await stopVoiceRecording(context);
+              } else {
+                await startVoiceRecording();
+              }
+            }
+          },
           child: Icon(
-            isRecording ? Icons.stop_circle_outlined : Icons.mic_rounded,
+            kIsWeb
+                ? Icons.attach_file_rounded
+                : (isRecording
+                      ? Icons.stop_circle_outlined
+                      : Icons.mic_rounded),
             color: Colors.white,
             size: 21,
           ),

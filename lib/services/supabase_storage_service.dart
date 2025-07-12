@@ -141,4 +141,33 @@ class SupabaseStorageService {
       return null;
     }
   }
+
+  Future<String?> uploadChatVoiceNoteBytes({
+    required String chatId,
+    required String userId,
+    required Uint8List bytes,
+    required String fileName,
+  }) async {
+    try {
+      final fileExt = fileName.split('.').last.toLowerCase();
+      final timestamp = DateTime.now().millisecondsSinceEpoch;
+      final filePath = 'chats/$chatId/voice_${userId}_$timestamp.$fileExt';
+      final response = await supabase.storage
+          .from('images')
+          .uploadBinary(
+            filePath,
+            bytes,
+            fileOptions: const FileOptions(upsert: true),
+          );
+      if (response != null && response.isNotEmpty) {
+        return supabase.storage.from('images').getPublicUrl(filePath);
+      } else {
+        print('[uploadChatVoiceNoteBytes] Upload gagal: response kosong');
+        return null;
+      }
+    } catch (e) {
+      print('[uploadChatVoiceNoteBytes] Upload error: $e');
+      return null;
+    }
+  }
 }

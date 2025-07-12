@@ -101,6 +101,45 @@ class AuthenticationProviderFirebase extends ChangeNotifier {
     }
   }
 
+  Future<void> updateUserProfile({
+    String? displayName,
+    String? imageUrl,
+  }) async {
+    if (user == null) {
+      debugPrint("User is null, cannot update profile.");
+      _setError("User tidak ditemukan.");
+      return;
+    }
+
+    if (displayName != null && displayName != user!.name) {
+      try {
+        await _auth.currentUser?.updateDisplayName(displayName);
+        user = user!.copyWith(name: displayName);
+        notifyListeners();
+      } on FirebaseAuthException catch (e) {
+        debugPrint("Error updating Firebase Auth display name: ${e.message}");
+        _setError("Gagal memperbarui nama pengguna: ${e.message}");
+      } catch (e) {
+        debugPrint("Error updating display name: $e");
+        _setError("Gagal memperbarui nama pengguna.");
+      }
+    }
+
+    if (imageUrl != null && imageUrl != user!.imageUrl) {
+      try {
+        await _auth.currentUser?.updatePhotoURL(imageUrl);
+        user = user!.copyWith(imageUrl: imageUrl);
+        notifyListeners();
+      } on FirebaseAuthException catch (e) {
+        debugPrint("Error updating Firebase Auth photo URL: ${e.message}");
+        _setError("Gagal memperbarui foto profil: ${e.message}");
+      } catch (e) {
+        debugPrint("Error updating photo URL: $e");
+        _setError("Gagal memperbarui foto profil.");
+      }
+    }
+  }
+
   String _safeGetString(
     Map<String, dynamic> data,
     String key,
@@ -145,7 +184,7 @@ class AuthenticationProviderFirebase extends ChangeNotifier {
     String password,
   ) async {
     try {
-      _setLoading(true);
+      setLoading(true);
       _clearError();
 
       if (email.isEmpty || password.isEmpty) {
@@ -183,7 +222,7 @@ class AuthenticationProviderFirebase extends ChangeNotifier {
       debugPrint("Error login tidak diketahui: $e");
       _setError("Terjadi kesalahan tak terduga: ${e.toString()}");
     } finally {
-      _setLoading(false);
+      setLoading(false);
     }
   }
 
@@ -193,7 +232,7 @@ class AuthenticationProviderFirebase extends ChangeNotifier {
     String name,
   ) async {
     try {
-      _setLoading(true);
+      setLoading(true);
       _clearError();
 
       if (email.isEmpty || password.isEmpty || name.isEmpty) {
@@ -239,13 +278,13 @@ class AuthenticationProviderFirebase extends ChangeNotifier {
       _setError("Terjadi kesalahan tak terduga: ${e.toString()}");
       return null;
     } finally {
-      _setLoading(false);
+      setLoading(false);
     }
   }
 
   Future<bool> kirimEmailResetPassword(String email) async {
     try {
-      _setLoading(true);
+      setLoading(true);
       _clearError();
 
       if (email.isEmpty) {
@@ -278,13 +317,13 @@ class AuthenticationProviderFirebase extends ChangeNotifier {
       _setError("Terjadi kesalahan tak terduga: ${e.toString()}");
       return false;
     } finally {
-      _setLoading(false);
+      setLoading(false);
     }
   }
 
   Future<void> logout() async {
     try {
-      _setLoading(true);
+      setLoading(true);
 
       if (user != null) {
         await _databaseService.updateUserLastSeenTime(user!.uid);
@@ -297,11 +336,11 @@ class AuthenticationProviderFirebase extends ChangeNotifier {
       debugPrint("Logout error: $e");
       _setError("Gagal logout: ${e.toString()}");
     } finally {
-      _setLoading(false);
+      setLoading(false);
     }
   }
 
-  void _setLoading(bool loading) {
+  void setLoading(bool loading) {
     _isLoading = loading;
     notifyListeners();
   }
@@ -324,7 +363,7 @@ class AuthenticationProviderFirebase extends ChangeNotifier {
     final currentUser = _auth.currentUser;
     if (currentUser != null) {
       try {
-        _setLoading(true);
+        setLoading(true);
         _clearError();
 
         await _ensureUserDocumentExists(currentUser);
@@ -358,7 +397,7 @@ class AuthenticationProviderFirebase extends ChangeNotifier {
         debugPrint("Error retry load user: $e");
         _setError("Gagal memuat ulang data user");
       } finally {
-        _setLoading(false);
+        setLoading(false);
       }
     }
   }

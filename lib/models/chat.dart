@@ -29,11 +29,13 @@ class Chat {
         : recipients.map((u) => u.name).join(', ');
   }
 
-  String imageURL() {
+  String get imageUrl {
     return !group
         ? (recipients.isNotEmpty ? recipients.first.imageUrl : "")
         : "https://e7.pngegg.com/pngimages/799/666/png-clipart-computer-icons-avatar-icon-design-avatar-heroes-computer-wallpaper-thumbnail.png";
   }
+
+  get pinned => null;
 
   Chat copyWith({
     String? uid,
@@ -51,7 +53,7 @@ class Chat {
       group: group ?? this.group,
       members: members ?? this.members,
       messages: messages ?? this.messages,
-      pinnedMessage: pinnedMessage ?? this.pinnedMessage,
+      pinnedMessage: pinned ?? this.pinnedMessage,
     );
   }
 }

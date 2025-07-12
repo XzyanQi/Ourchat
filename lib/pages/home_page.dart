@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:ourchat/pages/chats_page.dart';
+import 'package:ourchat/pages/profile_page.dart';
 import 'package:ourchat/pages/users_page.dart';
 
 class HomePage extends StatefulWidget {
@@ -25,15 +26,21 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   late Animation<double> _bottomNavAnimation;
   late Animation<double> _pageIndicatorAnimation;
 
-  final List<Widget> _pages = [const ChatsPage(), const UsersPage()];
-  final List<String> _pageLabels = ["Chats", "Users"];
+  final List<Widget> _pages = [
+    const ChatsPage(),
+    const UsersPage(),
+    const ProfilePage(),
+  ];
+  final List<String> _pageLabels = ["Chats", "Users", "Profile"];
   final List<IconData> _pageIcons = [
     Icons.chat_bubble_rounded,
     Icons.people_rounded,
+    Icons.person_rounded,
   ];
   final List<IconData> _pageIconsOutline = [
     Icons.chat_bubble_outline_rounded,
     Icons.people_outline_rounded,
+    Icons.person_outline_rounded,
   ];
 
   @override

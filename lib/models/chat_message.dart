@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/foundation.dart';
 
 enum MessageType { TEXT, IMAGE, VOICE, UNKNOWN }
 
@@ -31,12 +32,26 @@ class ChatMessage {
         messageType = MessageType.UNKNOWN;
     }
 
+    DateTime parsedSentTime;
+    if (json["sent_time"] is Timestamp) {
+      parsedSentTime = (json["sent_time"] as Timestamp).toDate();
+    } else if (json["sent_time"] is String) {
+      try {
+        parsedSentTime = DateTime.parse(json["sent_time"]);
+      } catch (e) {
+        debugPrint(
+          "Error parsing sent_time string: ${json["sent_time"]}, Error: $e",
+        );
+        parsedSentTime = DateTime.now();
+      }
+    } else {
+      parsedSentTime = DateTime.now();
+    }
+
     return ChatMessage(
       content: json["content"] ?? "",
       senderID: json["sender_id"] ?? json["senderID"] ?? "",
-      sentTime: (json["sent_time"] is Timestamp)
-          ? (json["sent_time"] as Timestamp).toDate()
-          : DateTime.parse(json["sent_time"].toString()),
+      sentTime: parsedSentTime,
       type: messageType,
     );
   }
@@ -62,5 +77,19 @@ class ChatMessage {
       "sender_id": senderID,
       "sent_time": Timestamp.fromDate(sentTime),
     };
+  }
+
+  ChatMessage copyWith({
+    String? senderID,
+    MessageType? type,
+    String? content,
+    DateTime? sentTime,
+  }) {
+    return ChatMessage(
+      senderID: senderID ?? this.senderID,
+      type: type ?? this.type,
+      content: content ?? this.content,
+      sentTime: sentTime ?? this.sentTime,
+    );
   }
 }

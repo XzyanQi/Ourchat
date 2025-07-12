@@ -1,10 +1,13 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_keyboard_visibility/flutter_keyboard_visibility.dart';
 import 'package:get_it/get_it.dart';
+import 'package:http/http.dart' as http;
 import 'package:ourchat/models/chat_message.dart';
 import 'package:ourchat/providers/authentication_provider_firebase.dart';
 import 'package:ourchat/services/database_service.dart';
@@ -71,6 +74,7 @@ class ChatPageProvider extends ChangeNotifier {
   void dispose() {
     _messageStream.cancel();
     _keyboardVisibilityStream.cancel();
+    _typingTimer?.cancel();
     super.dispose();
   }
 
@@ -127,6 +131,9 @@ class ChatPageProvider extends ChangeNotifier {
         final allowedExtensions = ['jpg', 'jpeg', 'png', 'gif', 'webp'];
         if (!allowedExtensions.contains(fileExt)) {
           debugPrint("Hanya file gambar yang diizinkan!");
+          _navigation.showSnackBar(
+            "Hanya file gambar (jpg, png, gif, webp) yang diizinkan.",
+          );
           return;
         }
         String? downloadURL = await _supabaseStorage.uploadChatImage(
@@ -142,20 +149,27 @@ class ChatPageProvider extends ChangeNotifier {
             sentTime: DateTime.now(),
           );
           _db.addMessageToChat(_chatId, messageToSend);
+        } else {
+          _navigation.showSnackBar("Gagal mengunggah gambar.");
         }
       }
     } catch (e) {
       debugPrint("Gagal mengirim pesan gambar.");
       debugPrint(e.toString());
+      _navigation.showSnackBar("Terjadi kesalahan saat mengirim gambar.");
     }
   }
 
+  // Metode untuk mengirim voice note dari file (mobile)
   Future<void> sendVoiceMessage(File file) async {
     try {
       String fileExt = file.path.split('.').last.toLowerCase();
-      final allowedExtensions = ['m4a', 'mp3', 'wav', 'aac', 'ogg'];
+      final allowedExtensions = ['m4a', 'mp3', 'wav', 'aac', 'ogg', 'webm'];
       if (!allowedExtensions.contains(fileExt)) {
         debugPrint("Hanya file audio yang diizinkan!");
+        _navigation.showSnackBar(
+          "Hanya file audio (m4a, mp3, wav, aac, ogg, webm) yang diizinkan.",
+        );
         return;
       }
       String? downloadURL = await _supabaseStorage.uploadChatVoiceNoteFile(
@@ -171,10 +185,79 @@ class ChatPageProvider extends ChangeNotifier {
           sentTime: DateTime.now(),
         );
         await _db.addMessageToChat(_chatId, messageToSend);
+      } else {
+        _navigation.showSnackBar("Gagal mengunggah pesan suara.");
       }
     } catch (e) {
       debugPrint("Gagal mengirim pesan suara.");
       debugPrint(e.toString());
+      _navigation.showSnackBar("Terjadi kesalahan saat mengirim pesan suara.");
+    }
+  }
+
+  // Metode untuk mengirim voice note dari bytes (web FilePicker)
+  Future<void> sendVoiceMessageFromBytes(
+    Uint8List bytes,
+    String fileName,
+  ) async {
+    try {
+      final fileExt = fileName.split('.').last.toLowerCase();
+      final allowedExtensions = ['m4a', 'mp3', 'wav', 'aac', 'ogg', 'webm'];
+      if (!allowedExtensions.contains(fileExt)) {
+        debugPrint("Hanya file audio yang diizinkan untuk diunggah!");
+        _navigation.showSnackBar(
+          "Hanya file audio (m4a, mp3, wav, aac, ogg, webm) yang diizinkan.",
+        );
+        return;
+      }
+
+      String? downloadURL = await _supabaseStorage.uploadChatVoiceNoteBytes(
+        chatId: _chatId,
+        userId: _auth.user!.uid,
+        bytes: bytes,
+        fileName: fileName,
+      );
+      if (downloadURL != null) {
+        ChatMessage messageToSend = ChatMessage(
+          content: downloadURL,
+          type: MessageType.VOICE,
+          senderID: _auth.user!.uid,
+          sentTime: DateTime.now(),
+        );
+        await _db.addMessageToChat(_chatId, messageToSend);
+      } else {
+        _navigation.showSnackBar("Gagal mengunggah file audio.");
+      }
+    } catch (e) {
+      debugPrint("Gagal mengirim file audio dari bytes.");
+      debugPrint(e.toString());
+      _navigation.showSnackBar("Terjadi kesalahan saat mengirim file audio.");
+    }
+  }
+
+  // Metode baru untuk mengirim voice note dari Path (URL Blob di web dari record package)
+  Future<void> sendVoiceMessageFromPath(String path) async {
+    try {
+      if (kIsWeb) {
+        final http.Response response = await http.get(Uri.parse(path));
+        if (response.statusCode == 200) {
+          final Uint8List bytes = response.bodyBytes;
+          final String fileName =
+              'voice_note_${DateTime.now().millisecondsSinceEpoch}.webm';
+          await sendVoiceMessageFromBytes(bytes, fileName);
+        } else {
+          throw Exception("Failed to fetch audio blob: ${response.statusCode}");
+        }
+      } else {
+        File file = File(path);
+        await sendVoiceMessage(file);
+      }
+    } catch (e) {
+      debugPrint("Gagal mengirim voice note dari path: $e");
+      debugPrint(e.toString());
+      _navigation.showSnackBar(
+        "Terjadi kesalahan saat mengirim voice note dari path.",
+      );
     }
   }
 
@@ -190,7 +273,6 @@ class ChatPageProvider extends ChangeNotifier {
   Future<void> deleteMessage(ChatMessage message) async {
     try {
       await _db.deleteMessageFromChat(_chatId, message);
-      // Jika pesan terpin dihapus, unpin
       if (pinnedMessage != null &&
           pinnedMessage!.sentTime == message.sentTime &&
           pinnedMessage!.senderID == message.senderID) {
@@ -198,6 +280,7 @@ class ChatPageProvider extends ChangeNotifier {
       }
     } catch (e) {
       debugPrint("Gagal menghapus pesan: $e");
+      _navigation.showSnackBar("Gagal menghapus pesan.");
     }
   }
 
@@ -231,6 +314,12 @@ class ChatPageProvider extends ChangeNotifier {
         newContent.trim().isNotEmpty &&
         newContent != message.content) {
       await _db.updateMessageInChat(_chatId, message, newContent.trim());
+      if (pinnedMessage != null &&
+          pinnedMessage!.sentTime == message.sentTime &&
+          pinnedMessage!.senderID == message.senderID) {
+        pinnedMessage = pinnedMessage!.copyWith(content: newContent.trim());
+        notifyListeners();
+      }
     }
   }
 
@@ -239,8 +328,10 @@ class ChatPageProvider extends ChangeNotifier {
       await _db.setPinnedMessage(_chatId, message);
       pinnedMessage = message;
       notifyListeners();
+      _navigation.showSnackBar("Pesan berhasil di-pin!");
     } catch (e) {
       debugPrint("Gagal pin pesan: $e");
+      _navigation.showSnackBar("Gagal pin pesan.");
     }
   }
 
@@ -249,8 +340,10 @@ class ChatPageProvider extends ChangeNotifier {
       await _db.clearPinnedMessage(_chatId);
       pinnedMessage = null;
       notifyListeners();
+      _navigation.showSnackBar("Pesan berhasil di-unpin!");
     } catch (e) {
       debugPrint("Gagal unpin pesan: $e");
+      _navigation.showSnackBar("Gagal unpin pesan.");
     }
   }
 
